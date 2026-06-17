@@ -23,7 +23,12 @@ create schema if not exists auth;
 
 create or replace function auth.uid()
 returns uuid language sql stable as $$
-  select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub','')::uuid;
+  -- nullif guards against auth.logout() setting the GUC to '' (empty string),
+  -- which would otherwise cause '':jsonb to throw "invalid input syntax for json".
+  select nullif(
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb) ->> 'sub',
+    ''
+  )::uuid;
 $$;
 
 -- minimal stand-in for auth.users so FKs/joins behave like Supabase
@@ -42,3 +47,6 @@ returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims', '', false);
 end $$;
+
+-- Supabase grants authenticated/anon usage on auth by default; local doesn't.
+grant usage on schema auth to authenticated, anon;

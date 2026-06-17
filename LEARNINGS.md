@@ -3,6 +3,27 @@
 Durable quirks and facts. Add to this whenever something costs >5 min to rediscover.
 
 ## Discovered while building (newest first)
+- **The local shim's `auth.uid()` must null-guard before casting to jsonb.**
+  `auth.logout()` stores `''` (empty string) in the `request.jwt.claims` GUC.
+  `''::jsonb` throws "invalid input syntax for type json". Fix: wrap with
+  `nullif(current_setting(...), '')::jsonb` so an empty setting becomes null
+  instead of an error. (Bit P1-T2 in the SYSTEM-fallback actor test.)
+- **Generic trigger functions shared across tables must use jsonb field access,
+  not direct record-field access, for columns that only some tables have.**
+  `new.created_by` in a trigger body raises a runtime error when the trigger
+  fires on a table (e.g. `app_users`) that has no `created_by` column. Pattern:
+  `to_jsonb(new) ->> 'created_by'` returns null silently for absent fields.
+- **The local shim and T1 migration were missing USAGE grants on `auth` and
+  `app` schemas for `authenticated`.** Supabase provides these automatically;
+  local Postgres does not. `authenticated` needs USAGE on every schema whose
+  objects it calls (including SECURITY DEFINER functions). Added: shim grants
+  `auth` to `authenticated, anon`; T1 migration grants `app` to same.
+  (The LEARNINGS note already said to do this; the implementation was absent.)
+- **Append-only test pattern: when a grant is revoked, `expect_fail` is correct.
+  `expect_ok`-then-assert-unchanged is only for the grant-present / RLS-filtered
+  case** where the statement runs but the row is invisible. Direct
+  INSERT/UPDATE/DELETE on `audit.audit_log` from `authenticated` fails at the
+  privilege level (permission denied), not silently via RLS.
 - **RLS blocks UPDATE/DELETE *silently* by filtering rows (0 rows, no error); only
   INSERT raises on WITH CHECK.** Test write-blocks by asserting the row was NOT
   changed, never by expecting an exception. (Cost a failed test on P1-T1.)

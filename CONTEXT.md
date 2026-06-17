@@ -91,20 +91,29 @@ per-entity close checklist; **post-pilot "Auditor Pack" single export bundle**
 
 ---
 ## Session: 2026-06-17
-Branch: feat/p1-t1-dimension-schema (suggested)
+Branch: main
+
 Task completed: **P1-T1 — dimension schema (entities, accounts, parties) +
   app_users role mapping + RLS + audit columns + constraints.** Tested on real
   Postgres 16: 21/21 checks pass (constraints, L3 actor guard, contra-asset
   modelling, full RLS matrix per role, FK-restrict, touch trigger).
-Decision made: stack = Supabase; threshold provisional Tk 50,000; two usage-triggers
-  moved to T4; all design decisions above.
-Files: supabase/migrations/0001_dimension_schema.sql ·
-  supabase/tests/00_local_supabase_shim.sql ·
-  supabase/tests/0001_dimension_schema_test.sql
-Next task: **P1-T2 — audit_log table + generic audit trigger**, attached to the
-  three T1 tables; app DB role INSERT-only on audit schema. (Hand to Claude Code:
-  "Add audit.audit_log(table, record_id, op, old_json, new_json, actor, at) and a
-  generic AFTER INSERT/UPDATE/DELETE trigger writing to it; attach to entities,
-  accounts, parties, app_users; revoke UPDATE/DELETE on audit.* from authenticated.")
+
+Task completed: **P1-T2 — audit infrastructure.** audit.audit_log table +
+  generic AFTER INSERT/UPDATE/DELETE SECURITY DEFINER trigger (audit.log_change())
+  attached to entities, accounts, parties, app_users. SECURITY DEFINER + zero
+  direct grant confirmed as deliberate stronger-than-§2 choice: authenticated
+  cannot forge an audit row at all. Actor never null (SYSTEM uuid sentinel).
+  Text-PK branch for accounts; jsonb-based field access so trigger is safe on
+  tables without created_by/updated_by (e.g. app_users). RLS: SELECT for ADMIN
+  / HQ_FINANCE / READ_ONLY; ENTRY blocked. Combined test run: 21/21 T1 green +
+  20/20 T2 green on Postgres 16.14 (homebrew). Three shim gaps fixed during
+  build (see LEARNINGS.md).
+Files: supabase/migrations/0002_audit_log.sql ·
+  supabase/tests/0002_audit_log_test.sql ·
+  supabase/tests/00_local_supabase_shim.sql (3 fixes) ·
+  supabase/migrations/0001_dimension_schema.sql (app schema grant added)
+
+Next task: **P1-T3 — settings table + seed** (cap threshold, §7 asset rates,
+  residual, fiscal year, high-value approval threshold = Tk 50,000 provisional).
 Open questions: confirm Tk 50,000 threshold at pilot; confirm clinic connectivity.
 Blockers: none.
