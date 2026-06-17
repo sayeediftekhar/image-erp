@@ -12,9 +12,6 @@
 
 -- ---------- helper schema -----------------------------------------------------
 create schema if not exists app;
--- Supabase grants authenticated/anon usage on the app schema automatically via
--- the Supabase platform; local Postgres does not — grant explicitly for parity.
-grant usage on schema app to authenticated, anon;
 
 -- SYSTEM actor uuid: used as created_by for migration-time seeds (no auth.uid()).
 -- Real writes carry the authenticated user; this exists only so seed rows have a

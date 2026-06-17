@@ -11,6 +11,12 @@
 -- in the plan review before build.
 -- ============================================================================
 
+-- ---------- app schema USAGE grant (belongs here, not in 0001) --------------
+-- Supabase grants authenticated/anon usage on the app schema automatically;
+-- local Postgres does not. This was surfaced by T2 tests and belongs in the
+-- next migration after 0001 rather than editing that already-committed file.
+grant usage on schema app to authenticated, anon;
+
 -- ---------- audit schema + table ---------------------------------------------
 create schema if not exists audit;
 
