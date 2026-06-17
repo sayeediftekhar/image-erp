@@ -113,7 +113,20 @@ Files: supabase/migrations/0002_audit_log.sql ·
   supabase/tests/00_local_supabase_shim.sql (3 fixes) ·
   supabase/migrations/0001_dimension_schema.sql (app schema grant added)
 
-Next task: **P1-T3 — settings table + seed** (cap threshold, §7 asset rates,
-  residual, fiscal year, high-value approval threshold = Tk 50,000 provisional).
-Open questions: confirm Tk 50,000 threshold at pilot; confirm clinic connectivity.
+Task completed: **P1-T3 — settings + asset_classes.** Two tables with audit
+  columns, require_actor, touch triggers, and RLS (same pattern as T1 reference
+  tables). audit.log_change() replaced (CREATE OR REPLACE in 0003) with the
+  generic id>code>key waterfall — no per-table branching; works for all 6 attached
+  tables. Seeds: 3 settings + 6 asset_classes (Blueprint §7 rates, residual 0).
+  Full chain: 21/21 T1 + 20/20 T2 + T3 green.
+Files: supabase/migrations/0003_settings_and_asset_classes.sql ·
+  supabase/tests/0003_settings_and_asset_classes_test.sql
+
+Next task: **P1-T4 — ledger schema** (journal_entries, journal_lines,
+  Σdebit=Σcredit trigger, usage-dependent account triggers, status/entered_at).
+Open questions:
+  - **fiscal_year_start_month = 7 PROVISIONAL** — confirm with Sayeed at pilot
+    (July assumed as Bangladesh standard; description in DB row is marked provisional).
+  - **high_value_approval_threshold = Tk 50,000 PROVISIONAL** — confirm at pilot.
+  - Confirm clinic connectivity (offline-tolerant entry may be required).
 Blockers: none.
