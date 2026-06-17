@@ -1,0 +1,52 @@
+# IMAGE ERP — LEARNINGS.md
+
+Durable quirks and facts. Add to this whenever something costs >5 min to rediscover.
+
+## Discovered while building (newest first)
+- **RLS blocks UPDATE/DELETE *silently* by filtering rows (0 rows, no error); only
+  INSERT raises on WITH CHECK.** Test write-blocks by asserting the row was NOT
+  changed, never by expecting an exception. (Cost a failed test on P1-T1.)
+- **`created_by default auth.uid()`** works at the column-default level on both
+  Supabase and a local shim. Migration-time seeds have no `auth.uid()`, so seed rows
+  must pass the SYSTEM uuid `00000000-...-0000` explicitly, or the L3 actor guard
+  rejects them.
+- **Role helpers that policies call must be `SECURITY DEFINER`** (e.g. `app.is_admin()`
+  reading `app_users`) or RLS on `app_users` recurses. They run as owner = bypass RLS.
+- **Local Postgres can fully emulate Supabase RLS** via a shim: create roles
+  `authenticated`/`anon`/`service_role`, an `auth.uid()` that reads the
+  `request.jwt.claims` GUC, and `auth.login_as(uid)` to switch identity in tests.
+  Grant `usage` on schemas `auth`/`app`/`test` to `authenticated` (Supabase does this
+  for you; local doesn't).
+
+## Accounting model
+- Double-entry; ledger (journal_entries + journal_lines) = single source of truth.
+- Basis: cash for most expenses; ACCRUAL for salaries, doctor fees & allowances.
+- Four funds: PI · RDF · HQ-General · TB Care (restricted). Six entities: 5 clinics + HQ.
+- RDF purchases → RDF Stock (asset), NOT expense. COGS monthly = Opening+Purch−Closing.
+- `normal_balance` is stored separately from `type` so contra-asset 1590 (Accumulated
+  Depreciation) = type ASSET + normal_balance CREDIT. Don't derive one from the other.
+- `account.fund` is NULLABLE — the "any/—" accounts in Blueprint §3 apply to any fund;
+  the line's fund is resolved at posting time (T4/T5).
+- RDF markup = OBSERVED margin only; never an input. No pricing rule anywhere.
+- Depreciation: straight-line, annual, zero residual, by class (rates in settings).
+  Capitalisation threshold default Tk 10,000 (a setting).
+
+## TB Care (restricted)
+- Reported to BRAC by the TB Care team. We do NOT reproduce its ledger. Carry only
+  the restricted fund balance (disclosed, excluded from operating totals) + rent
+  clearing (2410). Enforce exclusion at DB level, not a report-time filter.
+
+## Banking & investments
+- Clinics: SJIB only since Feb 2026. EXIM clinic accounts FROZEN (disclosed, excluded).
+- HQ: AB Bank (operating + ~16 FDR/MIDS), UCB (~3 FDR). ~Tk 4.15 cr invested.
+- Investment interest taxed 20% at source → auto gross/net split.
+- **FDR/MIDS data as of 18 Feb 2026 is STALE — refresh before seeding HQ opening balances.**
+
+## Tech / data
+- Supabase NUMERIC returns strings in JS — parse with a Zod transform.
+- RLS does not cascade to Storage buckets — set bucket policies separately.
+- Currency BDT only.
+
+## Users
+- Clinic managers non-technical — entry must work without instructions.
+- Managers see/enter ONLY their own entity's data. Consolidated = HQ/Admin/Auditor only.
