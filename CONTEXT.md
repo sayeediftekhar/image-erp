@@ -122,8 +122,24 @@ Task completed: **P1-T3 — settings + asset_classes.** Two tables with audit
 Files: supabase/migrations/0003_settings_and_asset_classes.sql ·
   supabase/tests/0003_settings_and_asset_classes_test.sql
 
-Next task: **P1-T4 — ledger schema** (journal_entries, journal_lines,
-  Σdebit=Σcredit trigger, usage-dependent account triggers, status/entered_at).
+Task completed: **P1-T4 — ledger core.** journal_entries + journal_lines with
+  full audit, require_actor, touch triggers. Spine guarantee: deferrable initially
+  deferred constraint trigger trg_journal_balance (SECURITY DEFINER to read all
+  lines unfiltered by caller's RLS). Issue #1 closed: lock trigger on accounts
+  BEFORE UPDATE (type/normal_balance); FK RESTRICT for no-hard-delete. RLS:
+  ENTRY entity-scoped; no write policy for authenticated on either table (SELECT
+  grant only — Law 2). Tests (37): CHECK constraints, balanced commit, unbalanced
+  rejection via SET CONSTRAINTS ALL IMMEDIATE, cascade delete of DRAFT entry
+  (deferred trigger sees 0=0, passes), RLS matrix 4 roles, no-write enforcement
+  for ENTRY + ADMIN, issue #1 full coverage, audit + actor. Full chain:
+  21/21 T1 + 20/20 T2 + 27/27 T3 + 37/37 T4 green.
+  Conscious choice: orphan-header prevention delegated to engine (T5), not a
+  second DB trigger — noted in migration comment.
+Files: supabase/migrations/0004_ledger_core.sql ·
+  supabase/tests/0004_ledger_core_test.sql
+
+Next task: **P1-T4b — posted-entry immutability** (block UPDATE/DELETE on
+  journal_entries/journal_lines when status='POSTED'; corrections via reversal).
 Open questions:
   - **fiscal_year_start_month = 7 PROVISIONAL** — confirm with Sayeed at pilot
     (July assumed as Bangladesh standard; description in DB row is marked provisional).
