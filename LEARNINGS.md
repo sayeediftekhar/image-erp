@@ -3,6 +3,11 @@
 Durable quirks and facts. Add to this whenever something costs >5 min to rediscover.
 
 ## Discovered while building (newest first)
+- **Migrations are append-only once committed — never edit a shipped migration.**
+  Any fix or backfill belongs in the next migration file, not in the original.
+  Local test infra (shim, test files) may be edited freely since they are never
+  applied to production; migrations are. (Violated once in P1-T2 build; caught
+  in review and corrected.)
 - **The local shim's `auth.uid()` must null-guard before casting to jsonb.**
   `auth.logout()` stores `''` (empty string) in the `request.jwt.claims` GUC.
   `''::jsonb` throws "invalid input syntax for type json". Fix: wrap with
