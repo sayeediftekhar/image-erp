@@ -13,7 +13,9 @@ import { DATABASE_POOL } from '../database/database.providers';
 export class LedgerService {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
-  async postTransaction(input: unknown, actorId: unknown): Promise<string> {
+  // isReversal is engine-set, never exposed to HTTP callers. T5c's reverseEntry
+  // passes true; every normal postTransaction call uses the default false.
+  async postTransaction(input: unknown, actorId: unknown, isReversal = false): Promise<string> {
     // Validate actor before anything else — clear Law-3 error before input parsing
     const actor = z
       .string()
@@ -24,16 +26,55 @@ export class LedgerService {
 
     this.checkBalance(parsed.lines);
 
-    const status = this.determineStatus(parsed);
+    const status = await this.determineStatus(parsed, isReversal);
 
     return this.writeEntry(parsed, status, actor);
   }
 
   // ── SINGLE EXTENSIBLE POINT ────────────────────────────────────────────────
-  // T5b replaces ONLY this method body to add the approval gate (value threshold,
-  // reversal flag, source_module=COGS). postTransaction() is untouched; the entire
-  // status routing decision lives here and nowhere else.
-  private determineStatus(_input: PostTransactionInput): JournalStatus {
+  // All status-routing logic lives here and nowhere else. Three rules (any one
+  // triggers PENDING_APPROVAL): (1) reversal; (2) entry total ≥ high-value
+  // threshold from settings; (3) any line touches a requires_approval=true account.
+  // Threshold read live from the DB on every call — it is data, not a constant.
+  // Comparison is integer-paisa: Math.round(Taka × 100), same rounding as
+  // checkBalance, so the two guards can never disagree on an entry's total.
+  private async determineStatus(
+    input: PostTransactionInput,
+    isReversal: boolean,
+  ): Promise<JournalStatus> {
+    // Rule 3 checked first — short-circuits with no DB queries
+    if (isReversal) return 'PENDING_APPROVAL';
+
+    const totalDebitPaisa = input.lines.reduce(
+      (s, l) => s + Math.round(l.debit * 100),
+      0,
+    );
+    const codes = input.lines.map((l) => l.accountCode);
+
+    // One round-trip: threshold from settings + flagged-account check
+    const { rows } = await this.pool.query<{
+      threshold: unknown;
+      has_flagged_account: boolean;
+    }>(
+      `SELECT
+         (SELECT value FROM public.settings
+           WHERE key = 'high_value_approval_threshold') AS threshold,
+         EXISTS (
+           SELECT 1 FROM public.accounts
+           WHERE code = ANY($1) AND requires_approval = true
+         ) AS has_flagged_account`,
+      [codes],
+    );
+
+    // Rule 1: value threshold
+    // Number() handles both jsonb-parsed number and any edge-case string return.
+    // Multiplied by 100 and rounded → integer paisa; compared as integers (no float).
+    const thresholdPaisa = Math.round(Number(rows[0].threshold) * 100);
+    if (totalDebitPaisa >= thresholdPaisa) return 'PENDING_APPROVAL';
+
+    // Rule 2: approval-flagged account
+    if (rows[0].has_flagged_account) return 'PENDING_APPROVAL';
+
     return 'POSTED';
   }
   // ──────────────────────────────────────────────────────────────────────────

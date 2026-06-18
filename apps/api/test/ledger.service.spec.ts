@@ -309,4 +309,204 @@ describe('LedgerService.postTransaction', () => {
     expect(rows[0].source_module).toBe('PAYROLL');
     expect(rows[0].source_id).toBe(SOURCE_ID);
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // P1-T5b — Approval gate
+  // All amounts in Taka (BDT); internal comparisons use integer paisa (× 100).
+  // Seeded threshold: Tk 50,000 = 5,000,000 paisa.
+  // Flagged account used: '3010' (Fund Balance — PI, requires_approval=true).
+  // Counter-account: '1010' (Cash in Hand — PI, requires_approval=false).
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('approval gate (P1-T5b)', () => {
+
+    // ── Gate test 1: routine entry → POSTED ────────────────────────────────
+    it('routes a routine entry (below threshold, unflagged accounts, not reversal) to POSTED', async () => {
+      const entryId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Gate routine',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 49999, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,     credit: 49999 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(entryId);
+
+      const { rows } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1',
+        [entryId],
+      );
+      expect(rows[0].status).toBe('POSTED');
+    });
+
+    // ── Gate test 2: above threshold → PENDING_APPROVAL ────────────────────
+    it('routes a high-value entry (total > threshold) to PENDING_APPROVAL', async () => {
+      const entryId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Gate above threshold',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 50001, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,     credit: 50001 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(entryId);
+
+      const { rows } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1',
+        [entryId],
+      );
+      expect(rows[0].status).toBe('PENDING_APPROVAL');
+    });
+
+    // ── Gate test 3: exactly at threshold → PENDING_APPROVAL (≥ boundary) ──
+    // Also directly proves the jsonb → Number() → paisa parse:
+    // settings.value for 'high_value_approval_threshold' must yield exactly
+    // 5,000,000 paisa (not just "routing happens to land right").
+    it('routes entry exactly at Tk 50,000 to PENDING_APPROVAL; threshold parses to exactly 5,000,000 paisa', async () => {
+      // Direct parse proof — read the live setting and assert the paisa value
+      const { rows: settingRows } = await pool.query(
+        "SELECT value FROM public.settings WHERE key = 'high_value_approval_threshold'",
+      );
+      const thresholdPaisa = Math.round(Number(settingRows[0].value) * 100);
+      expect(thresholdPaisa).toBe(5_000_000); // Tk 50,000 × 100 = 5,000,000 paisa exactly
+
+      // Routing proof at the ≥ boundary (5,000,000 paisa ≥ 5,000,000 paisa → PA)
+      const entryId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Gate exactly at threshold',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 50000, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,     credit: 50000 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(entryId);
+
+      const { rows } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1',
+        [entryId],
+      );
+      expect(rows[0].status).toBe('PENDING_APPROVAL');
+    });
+
+    // ── Gate test 4: one paisa below threshold → POSTED ────────────────────
+    // Tk 49,999.99 = 4,999,999 paisa < 5,000,000 paisa → POSTED (strict < boundary)
+    it('routes entry one paisa below threshold (Tk 49,999.99 = 4,999,999 paisa) to POSTED', async () => {
+      const entryId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Gate one paisa below',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 49999.99, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,        credit: 49999.99 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(entryId);
+
+      const { rows } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1',
+        [entryId],
+      );
+      expect(rows[0].status).toBe('POSTED');
+    });
+
+    // ── Gate test 5: flagged account → PENDING_APPROVAL ────────────────────
+    // Tk 100 << threshold; only trigger is requires_approval=true on '3010'.
+    it('routes entry touching a requires_approval=true account to PENDING_APPROVAL (Tk 100, below threshold)', async () => {
+      const entryId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Gate flagged account',
+          lines: [
+            { accountCode: '1010', fund: 'PI', debit: 100, credit: 0 },
+            { accountCode: '3010', fund: 'PI', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(entryId);
+
+      const { rows } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1',
+        [entryId],
+      );
+      expect(rows[0].status).toBe('PENDING_APPROVAL');
+    });
+
+    // ── Gate test 6: reversal → PENDING_APPROVAL ───────────────────────────
+    // isReversal=true (engine-set flag); amount and accounts are routine.
+    it('routes a reversal (isReversal=true) to PENDING_APPROVAL regardless of amount', async () => {
+      const entryId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Gate reversal',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+        true, // isReversal — engine-set, not user input
+      );
+      createdIds.push(entryId);
+
+      const { rows } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1',
+        [entryId],
+      );
+      expect(rows[0].status).toBe('PENDING_APPROVAL');
+    });
+
+    // ── Gate test 7: data-driven threshold ─────────────────────────────────
+    // Change the setting to Tk 200, post Tk 250 (below original Tk 50,000 but
+    // above new threshold), confirm routing follows the live setting value.
+    it('reads threshold live from settings: changing the setting changes routing', async () => {
+      await pool.query(
+        "UPDATE public.settings SET value = '200'::jsonb WHERE key = 'high_value_approval_threshold'",
+      );
+      try {
+        // Tk 250 = 25,000 paisa > 20,000 paisa (new threshold of Tk 200)
+        const entryId = await service.postTransaction(
+          {
+            entityId: jalEntityId,
+            entryDate: '2026-06-18',
+            description: '[T5-TEST] Gate data-driven threshold',
+            lines: [
+              { accountCode: '1010', fund: 'PI',  debit: 250, credit: 0 },
+              { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 250 },
+            ],
+          },
+          ACTOR_ID,
+        );
+        createdIds.push(entryId);
+
+        const { rows } = await pool.query(
+          'SELECT status FROM public.journal_entries WHERE id = $1',
+          [entryId],
+        );
+        expect(rows[0].status).toBe('PENDING_APPROVAL');
+      } finally {
+        // Restore original threshold — always, even on assertion failure
+        await pool.query(
+          "UPDATE public.settings SET value = '50000'::jsonb WHERE key = 'high_value_approval_threshold'",
+        );
+      }
+    });
+
+  }); // end describe('approval gate (P1-T5b)')
 });
