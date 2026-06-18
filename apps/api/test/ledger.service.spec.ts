@@ -742,24 +742,25 @@ describe('LedgerService.postTransaction', () => {
     }
 
     beforeAll(async () => {
-      // ON CONFLICT DO NOTHING makes setup idempotent: safe if a prior run's afterAll
-      // didn't execute (e.g. beforeAll threw mid-way leaving rows behind).
-      // ADMIN/HQ_FINANCE: entity_id must be NULL (app_users CHECK constraint)
+      // ON CONFLICT DO UPDATE (not DO NOTHING): psql test suite (0001_dimension_schema_test.sql)
+      // leaves app_users rows for these same UUIDs with different roles. DO UPDATE ensures
+      // the role and entity_id are correct for T5d regardless of prior DB state.
+      // ADMIN/HQ_FINANCE: entity_id must be NULL (app_users entry_user_has_entity CHECK)
       // ENTRY: entity_id must NOT be null (same constraint)
       await pool.query(
-        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'ACTOR as ADMIN', 'ADMIN', NULL, true) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'ACTOR as ADMIN', 'ADMIN', NULL, true) ON CONFLICT (id) DO UPDATE SET role = 'ADMIN', entity_id = NULL, active = true",
         [ACTOR_ID],
       );
       await pool.query(
-        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test ADMIN Approver', 'ADMIN', NULL, true) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test ADMIN Approver', 'ADMIN', NULL, true) ON CONFLICT (id) DO UPDATE SET role = 'ADMIN', entity_id = NULL, active = true",
         [ADMIN_APPROVER_ID],
       );
       await pool.query(
-        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test HQ Finance', 'HQ_FINANCE', NULL, true) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test HQ Finance', 'HQ_FINANCE', NULL, true) ON CONFLICT (id) DO UPDATE SET role = 'HQ_FINANCE', entity_id = NULL, active = true",
         [HQ_FINANCE_ID],
       );
       await pool.query(
-        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test Entry User', 'ENTRY', $2, true) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test Entry User', 'ENTRY', $2, true) ON CONFLICT (id) DO UPDATE SET role = 'ENTRY', entity_id = $2, active = true",
         [ENTRY_USER_ID, jalEntityId],
       );
     });
@@ -959,4 +960,251 @@ describe('LedgerService.postTransaction', () => {
     });
 
   }); // end describe('promoteEntry (P1-T5d)')
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // P1-T5e — rejectEntry
+  // Same three guards as promoteEntry but flips to REJECTED (not POSTED).
+  // REJECTED is terminal (0008 trigger blocks further UPDATE/DELETE), so test
+  // cleanup requires trigger-disable for any REJECTED entry — handled in this
+  // describe's afterAll, which runs before the outer afterAll. This guarantees
+  // the outer afterAll's broad DELETE WHERE description LIKE '[T5-TEST]%' never
+  // encounters a REJECTED row (which would abort the whole DELETE statement).
+  //
+  // Tracking arrays (local to this describe):
+  //   t5eRejectedIds — entries that ended in REJECTED status
+  //   t5eOriginalIds — POSTED originals paired with a REJECTED reversal;
+  //                    cleaned after their REJECTED reversal is removed (FK RESTRICT)
+  //
+  // Approver users: T5d afterAll removed them; re-inserted with ON CONFLICT DO NOTHING.
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('rejectEntry (P1-T5e)', () => {
+    const ADMIN_APPROVER_ID = '22222222-2222-2222-2222-222222222222';
+    const HQ_FINANCE_ID     = '33333333-3333-3333-3333-333333333333';
+    const ENTRY_USER_ID     = '44444444-4444-4444-4444-444444444444';
+
+    const t5eRejectedIds: string[] = [];
+    const t5eOriginalIds: string[] = [];
+
+    async function makePaEntry(desc: string): Promise<string> {
+      return service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: desc,
+          lines: [
+            { accountCode: '1010', fund: 'PI', debit: 100, credit: 0 },
+            { accountCode: '3010', fund: 'PI', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+    }
+
+    beforeAll(async () => {
+      // T5d afterAll removed these users; re-insert with DO UPDATE so the role is
+      // correct even if T5d afterAll didn't run (e.g. mid-beforeAll failure on a prior run).
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'ACTOR as ADMIN', 'ADMIN', NULL, true) ON CONFLICT (id) DO UPDATE SET role = 'ADMIN', entity_id = NULL, active = true",
+        [ACTOR_ID],
+      );
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test ADMIN Approver', 'ADMIN', NULL, true) ON CONFLICT (id) DO UPDATE SET role = 'ADMIN', entity_id = NULL, active = true",
+        [ADMIN_APPROVER_ID],
+      );
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test HQ Finance', 'HQ_FINANCE', NULL, true) ON CONFLICT (id) DO UPDATE SET role = 'HQ_FINANCE', entity_id = NULL, active = true",
+        [HQ_FINANCE_ID],
+      );
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test Entry User', 'ENTRY', $2, true) ON CONFLICT (id) DO UPDATE SET role = 'ENTRY', entity_id = $2, active = true",
+        [ENTRY_USER_ID, jalEntityId],
+      );
+    });
+
+    afterAll(async () => {
+      // REJECTED entries cannot be DELETEd through the normal afterEach path:
+      // the 0008 trigger raises on any DELETE of a REJECTED row. Disable both
+      // immutability triggers, purge the entries (cascades to lines), then
+      // re-enable. Must finish before the outer afterAll runs.
+      if (t5eRejectedIds.length > 0) {
+        await pool.query('ALTER TABLE public.journal_entries DISABLE TRIGGER trg_journal_entries_immutable');
+        await pool.query('ALTER TABLE public.journal_lines   DISABLE TRIGGER trg_journal_lines_immutable');
+        await pool.query(
+          'DELETE FROM public.journal_entries WHERE id = ANY($1)',
+          [t5eRejectedIds],
+        );
+        await pool.query('ALTER TABLE public.journal_lines   ENABLE TRIGGER trg_journal_lines_immutable');
+        await pool.query('ALTER TABLE public.journal_entries ENABLE TRIGGER trg_journal_entries_immutable');
+      }
+      // POSTED originals paired with now-gone REJECTED reversals: FK RESTRICT is
+      // lifted; use the normal two-step flip then delete.
+      for (const id of t5eOriginalIds) {
+        await pool.query(
+          "UPDATE public.journal_entries SET status = 'REVERSED' WHERE id = $1 AND status = 'POSTED'",
+          [id],
+        );
+        await pool.query('DELETE FROM public.journal_entries WHERE id = $1', [id]);
+      }
+      await pool.query(
+        'DELETE FROM public.app_users WHERE id = ANY($1)',
+        [[ACTOR_ID, ADMIN_APPROVER_ID, HQ_FINANCE_ID, ENTRY_USER_ID]],
+      );
+    });
+
+    // ── T5e-1: ADMIN rejects PA entry ───────────────────────────────────────
+    it('ADMIN rejects a PENDING_APPROVAL entry → status REJECTED, reason stored, updated_by = approver', async () => {
+      const paId = await makePaEntry('[T5-TEST] Reject T5e-1 ADMIN');
+      const returned = await service.rejectEntry(paId, ADMIN_APPROVER_ID, 'duplicate expense claim');
+      t5eRejectedIds.push(paId);
+
+      expect(returned).toBe(paId);
+
+      const { rows: [row] } = await pool.query(
+        'SELECT status, rejection_reason, updated_by FROM public.journal_entries WHERE id = $1',
+        [paId],
+      );
+      expect(row.status).toBe('REJECTED');
+      expect(row.rejection_reason).toBe('duplicate expense claim');
+      expect(row.updated_by).toBe(ADMIN_APPROVER_ID);
+    });
+
+    // ── T5e-2: reject with no reason → rejection_reason null ────────────────
+    it('rejects with no reason provided → status REJECTED, rejection_reason null (reason is optional)', async () => {
+      const paId = await makePaEntry('[T5-TEST] Reject T5e-2 no reason');
+      await service.rejectEntry(paId, ADMIN_APPROVER_ID); // reason omitted
+      t5eRejectedIds.push(paId);
+
+      const { rows: [row] } = await pool.query(
+        'SELECT status, rejection_reason FROM public.journal_entries WHERE id = $1',
+        [paId],
+      );
+      expect(row.status).toBe('REJECTED');
+      expect(row.rejection_reason).toBeNull();
+    });
+
+    // ── T5e-3: ENTRY user cannot reject (Guard B) ───────────────────────────
+    it('rejects rejection by an ENTRY user (Guard B — role check): "not authorised"', async () => {
+      const paId = await makePaEntry('[T5-TEST] Reject T5e-3 ENTRY');
+      createdIds.push(paId); // rejectEntry fails → stays PA → afterEach deletes directly
+
+      await expect(service.rejectEntry(paId, ENTRY_USER_ID))
+        .rejects.toThrow(/not authorised/);
+    });
+
+    // ── T5e-4: self-rejection blocked — proves Guard C, not Guard B ──────────
+    // ACTOR_ID is ADMIN (passes Guard B). Must fail with separation-of-duties,
+    // not with the role-ineligibility message.
+    it('rejects self-rejection with the separation-of-duties message (Guard C fires, not Guard B)', async () => {
+      const paId = await makePaEntry('[T5-TEST] Reject T5e-4 self-reject');
+      createdIds.push(paId);
+
+      await expect(service.rejectEntry(paId, ACTOR_ID))
+        .rejects.toThrow(/separation of duties/);
+    });
+
+    // ── T5e-5a: already-POSTED → "only PENDING_APPROVAL" ───────────────────
+    it('rejects rejectEntry on a POSTED entry (only PENDING_APPROVAL can be rejected)', async () => {
+      const postedId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Reject T5e-5a POSTED',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(postedId); // POSTED → afterEach two-step flip+delete
+
+      await expect(service.rejectEntry(postedId, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/only PENDING_APPROVAL/);
+    });
+
+    // ── T5e-5b: DRAFT → "only PENDING_APPROVAL" ─────────────────────────────
+    it('rejects rejectEntry on a DRAFT entry (only PENDING_APPROVAL can be rejected)', async () => {
+      const { rows: [{ id: draftId }] } = await pool.query(
+        `INSERT INTO public.journal_entries
+           (entity_id, entry_date, description, status, source_module, created_by)
+         VALUES ($1, '2026-06-18', '[T5-TEST] Reject T5e-5b DRAFT', 'DRAFT', 'MANUAL', $2)
+         RETURNING id`,
+        [jalEntityId, ACTOR_ID],
+      );
+      createdIds.push(draftId); // DRAFT → afterEach UPDATE does nothing → DELETE direct
+
+      await expect(service.rejectEntry(draftId, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/only PENDING_APPROVAL/);
+    });
+
+    // ── T5e-5c: REVERSED → "only PENDING_APPROVAL" ──────────────────────────
+    it('rejects rejectEntry on a REVERSED entry (only PENDING_APPROVAL can be rejected)', async () => {
+      const id = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Reject T5e-5c REVERSED',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      await pool.query(
+        "UPDATE public.journal_entries SET status = 'REVERSED' WHERE id = $1 AND status = 'POSTED'",
+        [id],
+      );
+      createdIds.push(id); // REVERSED → afterEach UPDATE does nothing → DELETE direct
+
+      await expect(service.rejectEntry(id, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/only PENDING_APPROVAL/);
+    });
+
+    // ── T5e-5d: already-REJECTED → "only PENDING_APPROVAL" ──────────────────
+    // First rejectEntry call succeeds; second call fails on Guard A (status=REJECTED).
+    it('rejects rejectEntry on an already-REJECTED entry (only PENDING_APPROVAL can be rejected)', async () => {
+      const paId = await makePaEntry('[T5-TEST] Reject T5e-5d already-REJECTED');
+      await service.rejectEntry(paId, ADMIN_APPROVER_ID, 'first rejection');
+      t5eRejectedIds.push(paId); // now REJECTED — trigger-disable cleanup in afterAll
+
+      await expect(service.rejectEntry(paId, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/only PENDING_APPROVAL/);
+    });
+
+    // ── T5e-6: rejecting a reversal — original stays POSTED ─────────────────
+    // Contrast with promoteEntry (T5d-5) which flips the original to REVERSED.
+    // A rejected reversal = "we decided not to reverse"; the original stays live.
+    it('rejecting a REVERSAL: reversal → REJECTED, original stays POSTED and is untouched', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Reject T5e-6 original',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      const reversalId = await service.reverseEntry(originalId, ACTOR_ID);
+
+      await service.rejectEntry(reversalId, ADMIN_APPROVER_ID, 'decided to keep the original');
+      // reversalId is REJECTED — trigger-disable cleanup in afterAll
+      // originalId is POSTED  — cleaned in afterAll after reversal is removed (FK RESTRICT)
+      t5eRejectedIds.push(reversalId);
+      t5eOriginalIds.push(originalId);
+
+      const { rows: [rev] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1', [reversalId],
+      );
+      const { rows: [orig] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1', [originalId],
+      );
+      expect(rev.status).toBe('REJECTED');
+      expect(orig.status).toBe('POSTED');
+    });
+
+  }); // end describe('rejectEntry (P1-T5e)')
 });

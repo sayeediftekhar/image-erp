@@ -202,6 +202,79 @@ export class LedgerService {
     }
   }
 
+  // rejectEntry: same three guards as promoteEntry (status=PA, role, maker≠checker),
+  // but flips to REJECTED instead of POSTED, records rejection_reason, and does NOT
+  // touch the original — a rejected reversal means "we decided not to reverse"; the
+  // original stays live and POSTED. REJECTED is terminal: the extended trigger (0008)
+  // blocks any further UPDATE or DELETE of the entry once it lands in this status.
+  async rejectEntry(entryId: string, approverId: string, reason?: string): Promise<string> {
+    const eid   = z.string().uuid('entryId must be a valid UUID').parse(entryId);
+    const actor = z.string().uuid('approverId must be a valid UUID').parse(approverId);
+
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: entries } = await client.query<{
+        status: string; created_by: string; reverses_entry_id: string | null;
+      }>(
+        'SELECT status, created_by, reverses_entry_id FROM public.journal_entries WHERE id = $1 FOR UPDATE',
+        [eid],
+      );
+      if (entries.length === 0) throw new Error(`entry ${eid} not found`);
+      const entry = entries[0];
+
+      // Guard A: only PENDING_APPROVAL entries can be rejected
+      if (entry.status !== 'PENDING_APPROVAL') {
+        throw new Error(
+          `entry ${eid} cannot be rejected: status is ${entry.status}` +
+          ` (only PENDING_APPROVAL entries can be rejected)`,
+        );
+      }
+
+      // Guard B: role eligibility — explicit lookup; service connection has no auth.uid()
+      const { rows: users } = await client.query<{ role: string }>(
+        'SELECT role FROM public.app_users WHERE id = $1 AND active = true',
+        [actor],
+      );
+      if (users.length === 0 || !['ADMIN', 'HQ_FINANCE'].includes(users[0].role)) {
+        throw new Error(
+          `approver ${actor} is not authorised to reject entries` +
+          ` (role must be ADMIN or HQ_FINANCE)`,
+        );
+      }
+
+      // Guard C: separation of duties — maker ≠ checker
+      if (entry.created_by === actor) {
+        throw new Error(
+          `approver ${actor} cannot reject their own entry` +
+          ` (separation of duties: maker ≠ checker)`,
+        );
+      }
+
+      // Flip PENDING_APPROVAL → REJECTED.
+      // T4b: PENDING_APPROVAL is freely mutable; multi-column update is fine
+      // (the to_jsonb status-check only applies to POSTED entries).
+      // Touch trigger: coalesce(auth.uid()=null, NEW.updated_by=actor) = actor ✓
+      // reverses_entry_id is intentionally ignored: a rejected reversal means
+      // "we decided not to reverse" — the original entry stays live and POSTED.
+      await client.query(
+        "UPDATE public.journal_entries" +
+        " SET status = 'REJECTED', rejection_reason = $1, updated_by = $2" +
+        " WHERE id = $3",
+        [reason ?? null, actor, eid],
+      );
+
+      await client.query('COMMIT');
+      return eid;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   // ── SINGLE EXTENSIBLE POINT ────────────────────────────────────────────────
   // All status-routing logic lives here and nowhere else. Three rules (any one
   // triggers PENDING_APPROVAL): (1) reversal; (2) entry total ≥ high-value

@@ -3,6 +3,15 @@
 Durable quirks and facts. Add to this whenever something costs >5 min to rediscover.
 
 ## Discovered while building (newest first)
+- **Test seed users shared between the psql suite and the Jest suite must use
+  `ON CONFLICT (id) DO UPDATE SET role=..., entity_id=..., active=...`, not
+  `DO NOTHING`.** The `0001_dimension_schema_test.sql` psql test leaves UUIDs
+  11111111–44444444 in `app_users` with specific roles (e.g. 33333333 = ENTRY/JAL,
+  44444444 = READ_ONLY). A Jest `beforeAll` that re-inserts them with `DO NOTHING`
+  silently keeps the stale psql-test role, so when the engine checks eligibility it
+  sees the wrong role — the wrong guard fires (or doesn't), and the test
+  passes/fails for the wrong reason. `DO UPDATE SET role=... entity_id=...` forces
+  the intended role unconditionally regardless of prior DB state.
 - **Migrations are append-only once committed — never edit a shipped migration.**
   Any fix or backfill belongs in the next migration file, not in the original.
   Local test infra (shim, test files) may be edited freely since they are never
