@@ -71,7 +71,13 @@ Durable quirks and facts. Add to this whenever something costs >5 min to redisco
 ## Tech / data
 - Supabase NUMERIC returns strings in JS — parse with a Zod transform.
 - RLS does not cascade to Storage buckets — set bucket policies separately.
-- Currency BDT only.
+
+## Currency
+- Currency is BDT (Bangladeshi Taka), subdivided into paisa (1 Taka = 100 paisa).
+  NEVER "rupees" (wrong country). Use Taka/BDT/paisa in all code, comments, errors.
+- Money stored as NUMERIC(15,2) in Postgres. In the engine, all balance and threshold
+  comparisons use INTEGER PAISA (Math.round(value * 100)) — never raw JS floats.
+  The value written to the DB derives from the same paisa rounding that is checked.
 
 ## Users
 - Clinic managers non-technical — entry must work without instructions.
