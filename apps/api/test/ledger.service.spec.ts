@@ -709,4 +709,254 @@ describe('LedgerService.postTransaction', () => {
     });
 
   }); // end describe('reverseEntry (P1-T5c)')
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // P1-T5d — promoteEntry
+  // One transaction covers all guards + both status flips.
+  // Approver users are inserted in beforeAll (app_users has no require_actor trigger)
+  // and removed in afterAll. ACTOR_ID is inserted as ADMIN so test 4 (self-approval)
+  // can prove Guard C fires, not Guard B — the approver is a valid ADMIN.
+  // Cleanup: entries approved to POSTED need the two-step afterEach flip;
+  // entries in failed promote attempts stay PA and delete directly.
+  // Reversal-related cleanup: push reversalId before originalId (FK constraint).
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('promoteEntry (P1-T5d)', () => {
+    const ADMIN_APPROVER_ID = '22222222-2222-2222-2222-222222222222';
+    const HQ_FINANCE_ID     = '33333333-3333-3333-3333-333333333333';
+    const ENTRY_USER_ID     = '44444444-4444-4444-4444-444444444444';
+
+    // Shortcut: a PA entry via the flagged-account route (Tk 100, well below threshold)
+    async function makePaEntry(desc: string): Promise<string> {
+      return service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: desc,
+          lines: [
+            { accountCode: '1010', fund: 'PI', debit: 100, credit: 0 },
+            { accountCode: '3010', fund: 'PI', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+    }
+
+    beforeAll(async () => {
+      // ON CONFLICT DO NOTHING makes setup idempotent: safe if a prior run's afterAll
+      // didn't execute (e.g. beforeAll threw mid-way leaving rows behind).
+      // ADMIN/HQ_FINANCE: entity_id must be NULL (app_users CHECK constraint)
+      // ENTRY: entity_id must NOT be null (same constraint)
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'ACTOR as ADMIN', 'ADMIN', NULL, true) ON CONFLICT (id) DO NOTHING",
+        [ACTOR_ID],
+      );
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test ADMIN Approver', 'ADMIN', NULL, true) ON CONFLICT (id) DO NOTHING",
+        [ADMIN_APPROVER_ID],
+      );
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test HQ Finance', 'HQ_FINANCE', NULL, true) ON CONFLICT (id) DO NOTHING",
+        [HQ_FINANCE_ID],
+      );
+      await pool.query(
+        "INSERT INTO public.app_users (id, full_name, role, entity_id, active) VALUES ($1, 'Test Entry User', 'ENTRY', $2, true) ON CONFLICT (id) DO NOTHING",
+        [ENTRY_USER_ID, jalEntityId],
+      );
+    });
+
+    afterAll(async () => {
+      await pool.query(
+        'DELETE FROM public.app_users WHERE id = ANY($1)',
+        [[ACTOR_ID, ADMIN_APPROVER_ID, HQ_FINANCE_ID, ENTRY_USER_ID]],
+      );
+    });
+
+    // ── T5d-1: ADMIN can approve → POSTED ──────────────────────────────────
+    it('ADMIN approves a PENDING_APPROVAL entry → status becomes POSTED', async () => {
+      const paId = await makePaEntry('[T5-TEST] Promote T5d-1 ADMIN');
+      await service.promoteEntry(paId, ADMIN_APPROVER_ID);
+      createdIds.push(paId); // now POSTED → afterEach flips POSTED→REVERSED then deletes
+
+      const { rows: [row] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1', [paId],
+      );
+      expect(row.status).toBe('POSTED');
+    });
+
+    // ── T5d-2: HQ_FINANCE can also approve → POSTED ─────────────────────────
+    it('HQ_FINANCE approves a PENDING_APPROVAL entry → status becomes POSTED', async () => {
+      const paId = await makePaEntry('[T5-TEST] Promote T5d-2 HQ_FINANCE');
+      await service.promoteEntry(paId, HQ_FINANCE_ID);
+      createdIds.push(paId);
+
+      const { rows: [row] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1', [paId],
+      );
+      expect(row.status).toBe('POSTED');
+    });
+
+    // ── T5d-3: ENTRY role cannot approve ────────────────────────────────────
+    it('rejects approval by an ENTRY user (Guard B — role check): "not authorised"', async () => {
+      const paId = await makePaEntry('[T5-TEST] Promote T5d-3 ENTRY');
+      createdIds.push(paId); // stays PA → afterEach UPDATE does nothing → DELETE direct
+
+      await expect(service.promoteEntry(paId, ENTRY_USER_ID))
+        .rejects.toThrow(/not authorised/);
+    });
+
+    // ── T5d-4: self-approval blocked — proves Guard C, not Guard B ──────────
+    // ACTOR_ID is ADMIN (passes Guard B). Guard C must fire with the
+    // separation-of-duties message — the test asserts that specific message to
+    // confirm the path taken, not just that something threw.
+    it('rejects self-approval with the separation-of-duties message (Guard C fires, not Guard B)', async () => {
+      const paId = await makePaEntry('[T5-TEST] Promote T5d-4 self-approval');
+      createdIds.push(paId);
+
+      await expect(service.promoteEntry(paId, ACTOR_ID))
+        .rejects.toThrow(/separation of duties/);
+    });
+
+    // ── T5d-5: approving a reversal flips BOTH entries in one call ──────────
+    it('approving a reversal: reversal→POSTED and original→REVERSED atomically', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Promote T5d-5 original',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      const reversalId = await service.reverseEntry(originalId, ACTOR_ID);
+      await service.promoteEntry(reversalId, ADMIN_APPROVER_ID);
+
+      // Reversal first (FK): reversalId POSTED→REVERSED→DELETE; originalId REVERSED→DELETE
+      createdIds.push(reversalId, originalId);
+
+      const { rows: [rev] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1', [reversalId],
+      );
+      const { rows: [orig] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1', [originalId],
+      );
+      expect(rev.status).toBe('POSTED');
+      expect(orig.status).toBe('REVERSED');
+    });
+
+    // ── T5d-6: atomicity — original not POSTED → whole promote rolls back ───
+    it('rolls back entirely when the original is not POSTED; reversal remains PENDING_APPROVAL', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Promote T5d-6 original',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      const reversalId = await service.reverseEntry(originalId, ACTOR_ID);
+
+      // Simulate original having been reversed by another path
+      await pool.query(
+        "UPDATE public.journal_entries SET status = 'REVERSED' WHERE id = $1 AND status = 'POSTED'",
+        [originalId],
+      );
+
+      // Reversal first: reversalId (PA→DELETE direct); originalId (REVERSED→DELETE direct)
+      createdIds.push(reversalId, originalId);
+
+      await expect(service.promoteEntry(reversalId, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/original entry.*not POSTED/);
+
+      const { rows: [rev] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1', [reversalId],
+      );
+      expect(rev.status).toBe('PENDING_APPROVAL');
+    });
+
+    // ── T5d-7a: already-POSTED entry rejected ───────────────────────────────
+    it('rejects promoteEntry on an already-POSTED entry (only PENDING_APPROVAL can be approved)', async () => {
+      const postedId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Promote T5d-7a already-POSTED',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(postedId); // POSTED → afterEach flips→deletes
+
+      await expect(service.promoteEntry(postedId, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/only PENDING_APPROVAL/);
+    });
+
+    // ── T5d-7b: DRAFT entry rejected ────────────────────────────────────────
+    it('rejects promoteEntry on a DRAFT entry (only PENDING_APPROVAL can be approved)', async () => {
+      const { rows: [{ id: draftId }] } = await pool.query(
+        `INSERT INTO public.journal_entries
+           (entity_id, entry_date, description, status, source_module, created_by)
+         VALUES ($1, '2026-06-18', '[T5-TEST] Promote T5d-7b DRAFT', 'DRAFT', 'MANUAL', $2)
+         RETURNING id`,
+        [jalEntityId, ACTOR_ID],
+      );
+      createdIds.push(draftId); // DRAFT → afterEach UPDATE does nothing → DELETE direct
+
+      await expect(service.promoteEntry(draftId, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/only PENDING_APPROVAL/);
+    });
+
+    // ── T5d-7c: REVERSED entry rejected ─────────────────────────────────────
+    it('rejects promoteEntry on a REVERSED entry (only PENDING_APPROVAL can be approved)', async () => {
+      const id = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Promote T5d-7c REVERSED',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 100, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      await pool.query(
+        "UPDATE public.journal_entries SET status = 'REVERSED' WHERE id = $1 AND status = 'POSTED'",
+        [id],
+      );
+      createdIds.push(id); // REVERSED → afterEach UPDATE does nothing → DELETE direct
+
+      await expect(service.promoteEntry(id, ADMIN_APPROVER_ID))
+        .rejects.toThrow(/only PENDING_APPROVAL/);
+    });
+
+    // ── T5d-8: updated_by stamped as approverId (attribution of approval) ───
+    it('stamps updated_by = approverId on the approved entry', async () => {
+      const paId = await makePaEntry('[T5-TEST] Promote T5d-8 updated_by');
+      await service.promoteEntry(paId, ADMIN_APPROVER_ID);
+      createdIds.push(paId);
+
+      const { rows: [row] } = await pool.query(
+        'SELECT updated_by FROM public.journal_entries WHERE id = $1', [paId],
+      );
+      expect(row.updated_by).toBe(ADMIN_APPROVER_ID);
+    });
+
+    // ── T5d-9: entry not found → clear error ────────────────────────────────
+    it('rejects promoteEntry with a clear "not found" error for a non-existent entry', async () => {
+      await expect(
+        service.promoteEntry('00000000-0000-0000-0000-000000000099', ADMIN_APPROVER_ID),
+      ).rejects.toThrow(/not found/);
+    });
+
+  }); // end describe('promoteEntry (P1-T5d)')
 });

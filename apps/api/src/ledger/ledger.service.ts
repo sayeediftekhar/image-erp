@@ -118,6 +118,90 @@ export class LedgerService {
     }
   }
 
+  // promoteEntry uses one transaction for all guards + both status flips so books
+  // can never be half-reversed (reversal POSTED while original still POSTED, or vice
+  // versa). FOR UPDATE on the entry serialises concurrent promote attempts.
+  async promoteEntry(entryId: string, approverId: string): Promise<string> {
+    const eid   = z.string().uuid('entryId must be a valid UUID').parse(entryId);
+    const actor = z.string().uuid('approverId must be a valid UUID').parse(approverId);
+
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: entries } = await client.query<{
+        status: string; created_by: string; reverses_entry_id: string | null;
+      }>(
+        'SELECT status, created_by, reverses_entry_id FROM public.journal_entries WHERE id = $1 FOR UPDATE',
+        [eid],
+      );
+      if (entries.length === 0) throw new Error(`entry ${eid} not found`);
+      const entry = entries[0];
+
+      // Guard A: only PENDING_APPROVAL entries can be approved
+      if (entry.status !== 'PENDING_APPROVAL') {
+        throw new Error(
+          `entry ${eid} cannot be approved: status is ${entry.status}` +
+          ` (only PENDING_APPROVAL entries can be approved)`,
+        );
+      }
+
+      // Guard B: role eligibility — explicit lookup; service connection has no auth.uid()
+      const { rows: users } = await client.query<{ role: string }>(
+        'SELECT role FROM public.app_users WHERE id = $1 AND active = true',
+        [actor],
+      );
+      if (users.length === 0 || !['ADMIN', 'HQ_FINANCE'].includes(users[0].role)) {
+        throw new Error(
+          `approver ${actor} is not authorised to approve entries` +
+          ` (role must be ADMIN or HQ_FINANCE)`,
+        );
+      }
+
+      // Guard C: separation of duties — maker ≠ checker
+      if (entry.created_by === actor) {
+        throw new Error(
+          `approver ${actor} cannot approve their own entry` +
+          ` (separation of duties: maker ≠ checker)`,
+        );
+      }
+
+      // Flip PENDING_APPROVAL → POSTED.
+      // T4b: PENDING_APPROVAL is freely mutable. Touch trigger: coalesce(auth.uid()=null,
+      // NEW.updated_by=actor) = actor, so approverId is stamped as updated_by.
+      await client.query(
+        "UPDATE public.journal_entries SET status = 'POSTED', updated_by = $1 WHERE id = $2",
+        [actor, eid],
+      );
+
+      // Coupled original flip: POSTED → REVERSED in the same transaction.
+      // Status-only UPDATE required — including any other column (e.g. updated_by) would
+      // cause T4b's to_jsonb comparison to see non-status changes and block the transition.
+      // RETURNING detects if the original was not POSTED; 0 rows → throw → ROLLBACK.
+      if (entry.reverses_entry_id) {
+        const { rows: flipped } = await client.query<{ id: string }>(
+          "UPDATE public.journal_entries SET status = 'REVERSED'" +
+          " WHERE id = $1 AND status = 'POSTED' RETURNING id",
+          [entry.reverses_entry_id],
+        );
+        if (flipped.length === 0) {
+          throw new Error(
+            `cannot approve reversal: original entry ${entry.reverses_entry_id}` +
+            ` is not POSTED — it may have been reversed by another path`,
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      return eid;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   // ── SINGLE EXTENSIBLE POINT ────────────────────────────────────────────────
   // All status-routing logic lives here and nowhere else. Three rules (any one
   // triggers PENDING_APPROVAL): (1) reversal; (2) entry total ≥ high-value
