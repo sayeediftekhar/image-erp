@@ -69,8 +69,8 @@ select test.expect_fail($$insert into public.accounts(code,name,type,normal_bala
 -- contra-asset must be expressible: type ASSET + normal_balance CREDIT
 select auth.login_as('11111111-1111-1111-1111-111111111111');
 select test.expect_ok($$insert into public.accounts(code,name,type,normal_balance,is_control)
-  values ('1590','Accumulated Depreciation','ASSET','CREDIT',false)$$,
-  'contra-asset 1590 = ASSET/CREDIT accepted');
+  values ('Z590','Accumulated Depreciation','ASSET','CREDIT',false)$$,
+  'contra-asset Z590 = ASSET/CREDIT accepted (code Z590: chart 1590 seeded by 0006)');
 
 -- account code length CHECK
 select test.expect_fail($$insert into public.accounts(code,name,type,normal_balance)
@@ -85,13 +85,13 @@ set role authenticated;
 -- ADMIN may write reference data
 select auth.login_as('11111111-1111-1111-1111-111111111111');
 select test.expect_ok($$insert into public.accounts(code,name,type,normal_balance,fund,is_control)
-  values ('2010','Accounts Payable - Suppliers','LIABILITY','CREDIT','RDF',true)$$,
+  values ('Z010','Accounts Payable - Suppliers','LIABILITY','CREDIT','RDF',true)$$,
   'ADMIN can insert account');
 select test.expect_ok($$insert into public.parties(name,kind,control_account)
-  values ('Renata Ltd','VENDOR','2010')$$,
+  values ('Renata Ltd','VENDOR','Z010')$$,
   'ADMIN can insert party');
 select test.expect_ok($$update public.accounts set name='Accounts Payable (Suppliers)'
-  where code='2010'$$, 'ADMIN can update account (touch trigger fires)');
+  where code='Z010'$$, 'ADMIN can update account (touch trigger fires)');
 
 -- ENTRY (JAL manager) may READ reference data but NOT write it
 select auth.login_as('33333333-3333-3333-3333-333333333333');
@@ -104,9 +104,9 @@ select test.expect_fail($$insert into public.accounts(code,name,type,normal_bala
   'ENTRY cannot insert account (admin-only write)');
 -- NOTE: RLS blocks UPDATE by filtering the row out (0 rows, no error), unlike
 -- INSERT which raises on WITH CHECK. So we assert the row was NOT changed.
-select test.expect_ok($$update public.accounts set name='hacked' where code='2010'$$,
+select test.expect_ok($$update public.accounts set name='hacked' where code='Z010'$$,
   'ENTRY update statement runs but hits 0 visible rows');
-select test.expect_ok($$select 1 from public.accounts where code='2010' and name <> 'hacked'$$,
+select test.expect_ok($$select 1 from public.accounts where code='Z010' and name <> 'hacked'$$,
   'ENTRY update changed nothing (RLS filtered the row)');
 select test.expect_fail($$insert into public.parties(name,kind) values ('Ghost','VENDOR')$$,
   'ENTRY cannot insert party');
@@ -131,14 +131,14 @@ select test.expect_ok($$select 1 where (select count(*) from public.app_users)=4
 -- C. FK RESTRICT slice of "deactivate, don't delete" (owner context)
 -- ---------------------------------------------------------------------------
 reset role;
-select test.expect_fail($$delete from public.accounts where code='2010'$$,
+select test.expect_fail($$delete from public.accounts where code='Z010'$$,
   'cannot delete control account referenced by a party (FK restrict)');
 select test.expect_fail($$delete from public.entities where code='JAL'$$,
   'cannot delete entity referenced by an app_user (FK restrict)');
 
 -- updated_at actually populated by the touch trigger
 select test.expect_ok($$select 1 from public.accounts
-  where code='2010' and updated_at is not null and updated_by is not null$$,
+  where code='Z010' and updated_at is not null and updated_by is not null$$,
   'updated_at/updated_by stamped on update');
 
 select '======== ALL P1-T1 TESTS PASSED ========' as result;

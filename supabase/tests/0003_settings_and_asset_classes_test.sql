@@ -102,7 +102,9 @@ select test.assert(
 );
 
 -- Regression — accounts: generalised trigger still yields record_id = text code.
--- Account '2010' was inserted in the T1 test run using the new trigger body.
+-- Account '2010' is seeded by migration 0006; its INSERT fires the generalised
+-- trigger and produces record_id = code (text-PK path). T1 fixture for this
+-- account now uses code 'Z010' to avoid a conflict with the 0006 seed.
 select test.assert(
   exists (
     select 1 from audit.audit_log

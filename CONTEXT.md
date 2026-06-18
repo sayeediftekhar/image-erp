@@ -73,9 +73,10 @@ FK-RESTRICT slice of "deactivate, don't delete".
 - P1-T4 — Ledger schema (`journal_entries`, `journal_lines`) + deferred
   `Σdebit=Σcredit` trigger + the two usage-dependent triggers moved here + the
   status/entered_at/source_* columns above.
+- P1-T6 — Seed chart of accounts (Blueprint §3, idempotent). **Runs before T5.**
+  Sequencing: chart=T6 ships first; engine=T5 is built against the real chart.
 - P1-T5 — `postTransaction()` engine (NestJS, Zod DTO, one DB txn, in-code balance
   check, per-line fund resolution, entered_by). Sole writer of journal_lines.
-- P1-T6 — Seed chart of accounts (Blueprint §3, idempotent).
 - P1-T7 — `fixed_assets` + `bank_feed` schema + RLS (structure only).
 - P1-T8 — Admin panel (Next.js CRUD: accounts/parties/settings; deactivate; lock
   type/normal_balance once used).
@@ -138,11 +139,41 @@ Task completed: **P1-T4 — ledger core.** journal_entries + journal_lines with
 Files: supabase/migrations/0004_ledger_core.sql ·
   supabase/tests/0004_ledger_core_test.sql
 
-Next task: **P1-T4b — posted-entry immutability** (block UPDATE/DELETE on
-  journal_entries/journal_lines when status='POSTED'; corrections via reversal).
+Task completed: **P1-T4b — posted-entry immutability.**
+  app.block_posted_mutation() BEFORE UPDATE OR DELETE on both journal tables.
+  POSTED entries/lines fully locked; sole permitted mutation is POSTED→REVERSED
+  (status-only, verified via to_jsonb comparison that relies on trigger firing
+  before trg_..._touch alphabetically — documented in migration comment).
+  DRAFT and PENDING_APPROVAL remain freely editable. Tests (16): 3 blocked field
+  edits, 1 blocked DELETE, 2 blocked line mutations, 1 allowed POSTED→REVERSED +
+  assertion, 1 PENDING_APPROVAL description edit allowed, DRAFT edit + line
+  fund-change + cascade delete + 2 assertions. Full chain: 21+20+27+37+16 green.
+Files: supabase/migrations/0005_posted_immutability.sql ·
+  supabase/tests/0005_posted_immutability_test.sql
+
+Task completed: **P1-T6 — chart of accounts (runs before T5 engine).**
+  Sequencing: original numbering had engine=T5, chart=T6, but dependency order
+  is accounts→transactions. T6 ships first; T5 (engine) builds against the real
+  chart. Two-step migration 0006: (1) ALTER TABLE accounts ADD COLUMN
+  requires_approval BOOLEAN NOT NULL DEFAULT false; (2) 59-account idempotent
+  seed (Blueprint §3, ON CONFLICT DO NOTHING, SYSTEM actor).
+  normal_balance explicit per row; 1590 = ASSET/CREDIT (contra-asset). fund=NULL
+  for 14 "any/—" accounts including 1190 EXIM FROZEN (cross-fund sweep; confirmed
+  Sayeed 2026-06-18) and 4210 Bank Interest. requires_approval=true on exactly 9
+  accounts: 1410, 1520, 2210, 3010, 3020, 3030, 3040, 3900, 4220.
+  T1 test fixtures renamed 1590→Z590, 2010→Z010 to avoid conflict with 0006 seed
+  (both chart codes pre-seeded before tests run). T3 test stale comment updated.
+  Tests (16): count=59, 2010/1590 source verified by name, 7 spot-checks,
+  requires_approval set (count + full 9-code check + false cases), idempotency.
+  Full chain: 21/21 T1 + 20/20 T2 + 27/27 T3 + 37/37 T4 + 16/16 T4b + 16/16
+  T6 green. Seeded 59 accounts.
+Files: supabase/migrations/0006_chart_of_accounts.sql ·
+  supabase/tests/0006_chart_of_accounts_test.sql ·
+  supabase/tests/0001_dimension_schema_test.sql (fixtures Z010/Z590) ·
+  supabase/tests/0003_settings_and_asset_classes_test.sql (stale comment)
+
 Open questions:
-  - **fiscal_year_start_month = 7 PROVISIONAL** — confirm with Sayeed at pilot
-    (July assumed as Bangladesh standard; description in DB row is marked provisional).
+  - **fiscal_year_start_month = 7 PROVISIONAL** — confirm at pilot.
   - **high_value_approval_threshold = Tk 50,000 PROVISIONAL** — confirm at pilot.
   - Confirm clinic connectivity (offline-tolerant entry may be required).
-Blockers: none.
+Next: P1-T6b (ledger index set, migration 0007), then P1-T5 (posting engine).
