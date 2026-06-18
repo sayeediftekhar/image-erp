@@ -31,6 +31,93 @@ export class LedgerService {
     return this.writeEntry(parsed, status, actor);
   }
 
+  // reverseEntry uses its own client for the entire read-and-create operation in
+  // one transaction: guard check (no existing reversal) and write are atomic,
+  // closing the TOCTOU race that a two-transaction approach would leave open.
+  // Status is 'PENDING_APPROVAL' directly — determineStatus would return it
+  // unconditionally for isReversal=true but adds a needless DB round-trip here.
+  // NUMERIC debit/credit from pg are strings; swapping them directly preserves
+  // the exact stored values with no float parsing.
+  // entry_date = CURRENT_DATE: the reversal is a new event in the current open
+  // period; using the original date would retroactively affect a closed period.
+  async reverseEntry(entryId: string, actorId: string): Promise<string> {
+    const eid   = z.string().uuid('entryId must be a valid UUID').parse(entryId);
+    const actor = z.string().uuid('actorId must be a valid UUID (Law 3)').parse(actorId);
+
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: entries } = await client.query<{
+        id: string; entity_id: string; ref: string | null; status: string;
+      }>(
+        'SELECT id, entity_id, ref, status FROM public.journal_entries WHERE id = $1',
+        [eid],
+      );
+      if (entries.length === 0) throw new Error(`entry ${eid} not found`);
+      const original = entries[0];
+
+      // Guard A: only POSTED entries can be reversed
+      if (original.status !== 'POSTED') {
+        throw new Error(
+          `entry ${eid} cannot be reversed: status is ${original.status}` +
+          ` (only POSTED entries can be reversed)`,
+        );
+      }
+
+      // Guard B: double-reversal prevention (checked within same transaction as write)
+      const { rows: existing } = await client.query<{ id: string }>(
+        'SELECT id FROM public.journal_entries WHERE reverses_entry_id = $1 LIMIT 1',
+        [eid],
+      );
+      if (existing.length > 0) {
+        throw new Error(
+          `entry ${eid} already has a reversing entry (${existing[0].id})`,
+        );
+      }
+
+      const { rows: lines } = await client.query<{
+        account_code: string; party_id: string | null;
+        fund: string; debit: string; credit: string;
+      }>(
+        'SELECT account_code, party_id, fund, debit, credit FROM public.journal_lines WHERE entry_id = $1',
+        [eid],
+      );
+
+      // source_module = 'REVERSAL' distinguishes reversals from 'MANUAL' entries in GL reports
+      const { rows: revRows } = await client.query<{ id: string }>(
+        `INSERT INTO public.journal_entries
+           (entity_id, entry_date, description, ref, status, source_module,
+            source_id, entered_at, created_by, reverses_entry_id)
+         VALUES ($1, CURRENT_DATE, $2, NULL, 'PENDING_APPROVAL', 'REVERSAL',
+                 NULL, NOW(), $3, $4)
+         RETURNING id`,
+        [original.entity_id, `Reversal of: ${original.ref ?? original.id}`, actor, eid],
+      );
+      const reversalId = revRows[0].id;
+
+      // Swap: original credit → new debit, original debit → new credit.
+      // A balanced entry swapped is balanced by identity; DB deferred trigger confirms at COMMIT.
+      for (const line of lines) {
+        await client.query(
+          `INSERT INTO public.journal_lines
+             (entry_id, account_code, party_id, fund, debit, credit, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [reversalId, line.account_code, line.party_id, line.fund,
+           line.credit, line.debit, actor],
+        );
+      }
+
+      await client.query('COMMIT');
+      return reversalId;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   // ── SINGLE EXTENSIBLE POINT ────────────────────────────────────────────────
   // All status-routing logic lives here and nowhere else. Three rules (any one
   // triggers PENDING_APPROVAL): (1) reversal; (2) entry total ≥ high-value

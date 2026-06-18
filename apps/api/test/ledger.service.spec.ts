@@ -509,4 +509,204 @@ describe('LedgerService.postTransaction', () => {
     });
 
   }); // end describe('approval gate (P1-T5b)')
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // P1-T5c — reverseEntry
+  // Cleanup order is load-bearing: reversal row has reverses_entry_id FK (ON DELETE
+  // RESTRICT) pointing to the original. Reversal must be cleaned up first, then
+  // the original flipped POSTED→REVERSED (immutability trigger requires this) then
+  // deleted. Pattern: createdIds.push(reversalId, originalId) — afterEach iterates
+  // in push order and handles the POSTED→REVERSED flip for each POSTED entry.
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('reverseEntry (P1-T5c)', () => {
+
+    // ── T5c-1: basic reversal creates correct PENDING_APPROVAL entry ────────
+    it('creates a PENDING_APPROVAL reversing entry with swapped lines, reverses_entry_id, and same entity/accounts/funds', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Rev T5c-1 original',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 1000, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,    credit: 1000 },
+          ],
+        },
+        ACTOR_ID,
+      );
+
+      const reversalId = await service.reverseEntry(originalId, ACTOR_ID);
+
+      // Reversal first → removes FK reference; original second → afterEach flips POSTED→REVERSED
+      createdIds.push(reversalId, originalId);
+
+      // Header assertions
+      const { rows: [rev] } = await pool.query(
+        'SELECT entity_id, status, reverses_entry_id FROM public.journal_entries WHERE id = $1',
+        [reversalId],
+      );
+      expect(rev.status).toBe('PENDING_APPROVAL');
+      expect(rev.reverses_entry_id).toBe(originalId);
+      expect(rev.entity_id).toBe(jalEntityId);
+
+      // Line swap assertions — sort by account_code for stable correlation
+      const { rows: origLines } = await pool.query(
+        'SELECT account_code, fund, debit, credit FROM public.journal_lines WHERE entry_id = $1 ORDER BY account_code',
+        [originalId],
+      );
+      const { rows: revLines } = await pool.query(
+        'SELECT account_code, fund, debit, credit FROM public.journal_lines WHERE entry_id = $1 ORDER BY account_code',
+        [reversalId],
+      );
+      expect(revLines).toHaveLength(origLines.length);
+      for (let i = 0; i < origLines.length; i++) {
+        expect(revLines[i].account_code).toBe(origLines[i].account_code);
+        expect(revLines[i].fund).toBe(origLines[i].fund);
+        expect(revLines[i].debit).toBe(origLines[i].credit);   // swapped
+        expect(revLines[i].credit).toBe(origLines[i].debit);   // swapped
+      }
+    });
+
+    // ── T5c-2: original stays POSTED — reverseEntry does not flip it ────────
+    it('leaves the original entry POSTED after reverseEntry (flip belongs to T5d)', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Rev T5c-2 original',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 500, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 500 },
+          ],
+        },
+        ACTOR_ID,
+      );
+
+      const reversalId = await service.reverseEntry(originalId, ACTOR_ID);
+      createdIds.push(reversalId, originalId);
+
+      const { rows: [orig] } = await pool.query(
+        'SELECT status FROM public.journal_entries WHERE id = $1',
+        [originalId],
+      );
+      expect(orig.status).toBe('POSTED');
+    });
+
+    // ── T5c-3: DRAFT entry → rejected ──────────────────────────────────────
+    // DRAFT entry inserted directly (postTransaction always creates POSTED/PA).
+    it('rejects reversal of a DRAFT entry with a clear error mentioning DRAFT', async () => {
+      const { rows: [{ id: draftId }] } = await pool.query(
+        `INSERT INTO public.journal_entries
+           (entity_id, entry_date, description, status, source_module, created_by)
+         VALUES ($1, '2026-06-18', '[T5-TEST] Rev T5c-3 draft', 'DRAFT', 'MANUAL', $2)
+         RETURNING id`,
+        [jalEntityId, ACTOR_ID],
+      );
+      createdIds.push(draftId);
+
+      await expect(service.reverseEntry(draftId, ACTOR_ID)).rejects.toThrow(/DRAFT/);
+    });
+
+    // ── T5c-4: PENDING_APPROVAL entry → rejected ────────────────────────────
+    it('rejects reversal of a PENDING_APPROVAL entry with a clear error mentioning PENDING_APPROVAL', async () => {
+      // Flagged account routes the entry to PENDING_APPROVAL
+      const paId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Rev T5c-4 PA entry',
+          lines: [
+            { accountCode: '1010', fund: 'PI', debit: 100, credit: 0 },
+            { accountCode: '3010', fund: 'PI', debit: 0,   credit: 100 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      createdIds.push(paId);
+
+      await expect(service.reverseEntry(paId, ACTOR_ID)).rejects.toThrow(/PENDING_APPROVAL/);
+    });
+
+    // ── T5c-5: REVERSED entry → rejected ───────────────────────────────────
+    // UPDATE POSTED→REVERSED directly (immutability trigger allows status-only change).
+    it('rejects reversal of a REVERSED entry with a clear error mentioning REVERSED', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Rev T5c-5 to-reverse',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 200, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 200 },
+          ],
+        },
+        ACTOR_ID,
+      );
+      // Flip to REVERSED (simulates post-approval state; trigger allows POSTED→REVERSED)
+      await pool.query(
+        "UPDATE public.journal_entries SET status = 'REVERSED' WHERE id = $1 AND status = 'POSTED'",
+        [originalId],
+      );
+      createdIds.push(originalId); // already REVERSED, afterEach UPDATE does nothing, DELETE works
+
+      await expect(service.reverseEntry(originalId, ACTOR_ID)).rejects.toThrow(/REVERSED/);
+    });
+
+    // ── T5c-6: double-reversal blocked ─────────────────────────────────────
+    // First call succeeds; second call on the same POSTED entry is rejected because
+    // the guard sees the existing reversal (original is still POSTED between T5c and T5d).
+    it('rejects a second reverseEntry call on the same entry (double-reversal guard)', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Rev T5c-6 double',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 300, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 300 },
+          ],
+        },
+        ACTOR_ID,
+      );
+
+      const reversalId = await service.reverseEntry(originalId, ACTOR_ID);
+      createdIds.push(reversalId, originalId);
+
+      await expect(service.reverseEntry(originalId, ACTOR_ID))
+        .rejects.toThrow(/already has a reversing entry/);
+    });
+
+    // ── T5c-7: actor stamped on header and all lines ────────────────────────
+    it('stamps the actorId as created_by on the reversal header and every line', async () => {
+      const originalId = await service.postTransaction(
+        {
+          entityId: jalEntityId,
+          entryDate: '2026-06-18',
+          description: '[T5-TEST] Rev T5c-7 actor',
+          lines: [
+            { accountCode: '1010', fund: 'PI',  debit: 400, credit: 0 },
+            { accountCode: '2010', fund: 'RDF', debit: 0,   credit: 400 },
+          ],
+        },
+        ACTOR_ID,
+      );
+
+      const reversalId = await service.reverseEntry(originalId, ACTOR_ID);
+      createdIds.push(reversalId, originalId);
+
+      const { rows: [header] } = await pool.query(
+        'SELECT created_by FROM public.journal_entries WHERE id = $1',
+        [reversalId],
+      );
+      expect(header.created_by).toBe(ACTOR_ID);
+
+      const { rows: lines } = await pool.query(
+        'SELECT created_by FROM public.journal_lines WHERE entry_id = $1',
+        [reversalId],
+      );
+      expect(lines.length).toBeGreaterThan(0);
+      lines.forEach((l) => expect(l.created_by).toBe(ACTOR_ID));
+    });
+
+  }); // end describe('reverseEntry (P1-T5c)')
 });
