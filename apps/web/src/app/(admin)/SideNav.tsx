@@ -9,7 +9,7 @@ const NAV_SECTIONS = [
     items: [
       { label: 'Chart of Accounts', href: '/accounts', built: true  },
       { label: 'Parties',           href: '/parties',  built: true  },
-      { label: 'Fixed Assets',      href: '/assets',   built: false },
+      { label: 'Fixed Assets',      href: '/assets',   built: true  },
     ],
   },
   {
