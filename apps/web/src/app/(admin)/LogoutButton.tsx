@@ -16,14 +16,7 @@ export default function LogoutButton() {
   return (
     <button
       onClick={handleLogout}
-      style={{
-        padding: '0.5rem 1rem',
-        background: '#fff',
-        border: '1px solid #d1d5db',
-        borderRadius: '6px',
-        fontSize: '0.875rem',
-        cursor: 'pointer',
-      }}
+      className="min-h-[44px] px-4 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 text-gray-700 font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-navy-vivid/50"
     >
       Sign out
     </button>

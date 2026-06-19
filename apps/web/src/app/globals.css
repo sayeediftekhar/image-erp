@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ── Brand tokens ────────────────────────────────────────────────────────────
+     Tune these two values after seeing them in the browser; everything else
+     (sidebar, buttons, nav) updates automatically via the Tailwind token mapping.
+     navy-deep  : large surfaces — sidebar, modals. Slightly desaturated for comfort.
+     navy-vivid : small accents only — primary buttons, active nav pill, avatar ring.
+  ─────────────────────────────────────────────────────────────────────────── */
+  --navy-deep:  #0F0A52;
+  --navy-vivid: #13007D;
+}
+
+/* Native <dialog> centering and backdrop */
+dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  border: none;
+  padding: 0;
+  max-height: calc(100vh - 2rem);
+  overflow: visible;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 
-// Root "/" redirects to /dashboard.
-// Middleware intercepts first: unauthenticated visitors are sent to /login before reaching here.
+// Root "/" redirects straight to /accounts (the first admin panel page).
+// Middleware intercepts first: unauthenticated visitors are redirected to /login.
 export default function RootPage() {
-  redirect('/dashboard')
+  redirect('/accounts')
 }

@@ -1,18 +1,13 @@
 import type { Metadata } from 'next'
 import LoginForm from './LoginForm'
 
-export const metadata: Metadata = { title: 'Sign in — IMAGE ERP' }
+export const metadata: Metadata = { title: 'Sign in — IMAGE Management System' }
 
 export default function LoginPage() {
   return (
     <main
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        background: '#f9fafb',
-      }}
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ background: 'linear-gradient(145deg, #07043a 0%, #0F0A52 55%, #1a0c7a 100%)' }}
     >
       <LoginForm />
     </main>
