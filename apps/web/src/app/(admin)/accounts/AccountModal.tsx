@@ -153,7 +153,7 @@ export default function AccountModal({ account, onClose, onSaved }: Props) {
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="w-full max-w-lg rounded-xl shadow-2xl p-0 overflow-hidden"
+      className="w-[calc(100vw-2rem)] max-w-lg rounded-xl shadow-2xl p-0 overflow-hidden"
     >
       <form onSubmit={handleSubmit} noValidate>
         {/* Header */}

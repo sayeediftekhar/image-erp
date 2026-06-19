@@ -21,11 +21,15 @@ const NAV_SECTIONS = [
   },
 ]
 
-export default function SideNav() {
+interface Props {
+  onNavigate?: () => void
+}
+
+export default function SideNav({ onNavigate }: Props) {
   const pathname = usePathname()
 
   return (
-    <nav className="flex-1 px-2 py-4 space-y-6" aria-label="Main navigation">
+    <nav className="flex-1 px-2 py-4 space-y-6 overflow-y-auto" aria-label="Main navigation">
       {NAV_SECTIONS.map(section => (
         <div key={section.label}>
           <p className="px-3 mb-1 text-[10px] font-semibold tracking-widest text-white/50 uppercase select-none">
@@ -50,6 +54,7 @@ export default function SideNav() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={onNavigate}
                   className={`flex items-center min-h-[44px] px-3 rounded-md text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/60 ${
                     isActive
                       ? 'bg-navy-vivid text-white'

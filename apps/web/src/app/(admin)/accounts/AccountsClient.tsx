@@ -74,22 +74,25 @@ export default function AccountsClient({
     return true
   })
 
+  const statusPill = (a: Account) =>
+    a.active ? 'bg-green-50 text-green-900' : 'bg-gray-100 text-gray-800'
+
   return (
     <>
-      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      {/* ── Toolbar — stacks vertically on mobile, row on md+ ───────────────── */}
+      <div className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-3 mb-4">
         <input
           type="search"
           placeholder="Search code or name…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="px-4 py-2.5 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 focus:border-navy-vivid transition-all duration-200 w-64"
+          className="w-full md:w-64 px-4 py-2.5 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 focus:border-navy-vivid transition-all duration-200"
         />
 
         <select
           value={typeFilter}
           onChange={e => setTypeFilter(e.target.value as AccountType | '')}
-          className="px-4 py-2.5 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 focus:border-navy-vivid transition-all duration-200"
+          className="w-full md:w-auto px-4 py-2.5 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 focus:border-navy-vivid transition-all duration-200"
         >
           <option value="">All types</option>
           {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -98,7 +101,7 @@ export default function AccountsClient({
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value as '' | 'active' | 'inactive')}
-          className="px-4 py-2.5 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 focus:border-navy-vivid transition-all duration-200"
+          className="w-full md:w-auto px-4 py-2.5 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 focus:border-navy-vivid transition-all duration-200"
         >
           <option value="">All statuses</option>
           <option value="active">Active only</option>
@@ -107,14 +110,14 @@ export default function AccountsClient({
 
         <button
           onClick={() => setModal({ mode: 'add' })}
-          className="ml-auto min-h-[44px] px-5 py-2.5 bg-navy-vivid text-white text-base font-medium rounded-lg hover:bg-navy-deep focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 transition-all duration-200"
+          className="w-full md:w-auto md:ml-auto min-h-[44px] px-5 py-2.5 bg-navy-vivid text-white text-base font-medium rounded-lg hover:bg-navy-deep focus:outline-none focus:ring-4 focus:ring-navy-vivid/30 transition-all duration-200"
         >
           + Add account
         </button>
       </div>
 
-      {/* ── Table ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      {/* ── Desktop table (md+) ─────────────────────────────────────────────── */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -159,7 +162,7 @@ export default function AccountsClient({
                   <td className="px-4 py-3 whitespace-nowrap">
                     <Pill
                       label={a.active ? 'Active' : 'Inactive'}
-                      className={a.active ? 'bg-green-50 text-green-900' : 'bg-gray-100 text-gray-800'}
+                      className={statusPill(a)}
                     />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -175,9 +178,7 @@ export default function AccountsClient({
                         disabled={toggling === a.code}
                         className="min-h-[44px] px-3 flex items-center text-sm font-medium text-gray-600 rounded-md hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-40 transition-colors duration-200 whitespace-nowrap"
                       >
-                        {toggling === a.code
-                          ? '…'
-                          : a.active ? 'Deactivate' : 'Reactivate'}
+                        {toggling === a.code ? '…' : a.active ? 'Deactivate' : 'Reactivate'}
                       </button>
                     </div>
                   </td>
@@ -193,6 +194,78 @@ export default function AccountsClient({
             ? `${accounts.length} accounts`
             : `${filtered.length} of ${accounts.length} accounts`}
         </div>
+      </div>
+
+      {/* ── Mobile cards (below md) ──────────────────────────────────────────── */}
+      <div className="md:hidden space-y-3">
+        {filtered.length === 0 && (
+          <p className="text-center text-sm text-gray-400 py-10">
+            No accounts match the current filters.
+          </p>
+        )}
+        {filtered.map(a => (
+          <div
+            key={a.code}
+            className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3 ${!a.active ? 'opacity-60' : ''}`}
+          >
+            {/* Code + Name + Status badge */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className="font-mono text-base font-semibold text-gray-900">{a.code}</span>
+                <p className="text-base text-gray-900 mt-0.5 leading-snug">{a.name}</p>
+              </div>
+              <Pill
+                label={a.active ? 'Active' : 'Inactive'}
+                className={statusPill(a)}
+              />
+            </div>
+
+            {/* Type + Balance + Fund badges */}
+            <div className="flex flex-wrap gap-2">
+              <Pill label={a.type} className={TYPE_PILL[a.type]} />
+              <Pill label={a.normal_balance} className={NB_PILL[a.normal_balance]} />
+              {a.fund && (
+                <Pill label={a.fund} className="bg-gray-50 text-gray-800" />
+              )}
+            </div>
+
+            {/* Secondary flags (only when set) */}
+            {(a.is_control || a.requires_approval) && (
+              <p className="text-xs text-gray-500">
+                {[
+                  a.is_control        && 'Control account',
+                  a.requires_approval && 'Needs approval',
+                ].filter(Boolean).join(' · ')}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <button
+                onClick={() => setModal({ mode: 'edit', account: a })}
+                className="flex-1 min-h-[44px] text-sm font-medium text-navy-vivid border border-navy-vivid/30 rounded-lg hover:bg-navy-vivid/10 focus:outline-none focus:ring-2 focus:ring-navy-vivid/50 transition-colors duration-200"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleToggleActive(a.code, !a.active)}
+                disabled={toggling === a.code}
+                className="flex-1 min-h-[44px] text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-40 transition-colors duration-200"
+              >
+                {toggling === a.code ? '…' : a.active ? 'Deactivate' : 'Reactivate'}
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {/* Card count footer */}
+        {filtered.length > 0 && (
+          <p className="text-center text-xs text-gray-400 pt-1 pb-2">
+            {filtered.length === accounts.length
+              ? `${accounts.length} accounts`
+              : `${filtered.length} of ${accounts.length} accounts`}
+          </p>
+        )}
       </div>
 
       {/* ── Modal ───────────────────────────────────────────────────────────── */}
