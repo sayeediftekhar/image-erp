@@ -8,7 +8,7 @@ const NAV_SECTIONS = [
     label: 'FINANCE',
     items: [
       { label: 'Chart of Accounts', href: '/accounts', built: true  },
-      { label: 'Parties',           href: '/parties',  built: false },
+      { label: 'Parties',           href: '/parties',  built: true  },
       { label: 'Fixed Assets',      href: '/assets',   built: false },
     ],
   },
@@ -16,7 +16,7 @@ const NAV_SECTIONS = [
     label: 'ADMINISTRATION',
     items: [
       { label: 'Users',    href: '/users',    built: false },
-      { label: 'Settings', href: '/settings', built: false },
+      { label: 'Settings', href: '/settings', built: true  },
     ],
   },
 ]
