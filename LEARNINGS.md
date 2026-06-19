@@ -3,6 +3,11 @@
 Durable quirks and facts. Add to this whenever something costs >5 min to rediscover.
 
 ## Discovered while building (newest first)
+- **Next.js 14 does NOT support `next.config.ts` — TypeScript config is a Next.js 15
+  feature.** Using `.ts` against an installed Next 14 throws "Configuring Next.js via
+  next.config.ts is not supported" at dev start. Use `next.config.mjs` (ESM) or
+  `next.config.js` (CJS) instead. Fixed by renaming to `.mjs` with the equivalent
+  `export default {}` syntax.
 - **Test seed users shared between the psql suite and the Jest suite must use
   `ON CONFLICT (id) DO UPDATE SET role=..., entity_id=..., active=...`, not
   `DO NOTHING`.** The `0001_dimension_schema_test.sql` psql test leaves UUIDs
