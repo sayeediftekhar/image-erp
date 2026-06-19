@@ -177,3 +177,109 @@ Open questions:
   - **high_value_approval_threshold = Tk 50,000 PROVISIONAL** — confirm at pilot.
   - Confirm clinic connectivity (offline-tolerant entry may be required).
 Next: P1-T6b (ledger index set, migration 0007), then P1-T5 (posting engine).
+
+---
+## Session: 2026-06-19 / 2026-06-20
+Branch: main
+
+### PHASE 1 COMPLETE — deployed to live Supabase
+
+Tasks completed this session (P1-T7 through P1-T8e):
+
+**P1-T7** — `fixed_assets` + `bank_feed` schema + RLS (migration 0009). Entity-scoped
+  SELECT for authenticated; structure only (depreciation run is Phase 4).
+
+**P1-T8a** — Admin panel visual polish: branded login (navy gradient, transparent PNG logo,
+  "IMAGE Management System" title), AAA contrast badges (-900 text shades), 16px min text,
+  44px touch targets, ring-4 focus rings, 8–12px border radius, 200–300ms transitions.
+  SideNav grouped: FINANCE (Accounts, Parties, Fixed Assets) / ADMINISTRATION (Users, Settings).
+  Logo: transparent PNG on white card (login); white circle container on navy sidebar.
+
+**P1-T8a-mobile** — Single `md` breakpoint responsive layout. New `AdminShell.tsx` Client
+  Component holds drawer state; `layout.tsx` stays Server Component for auth. Single responsive
+  sidebar via CSS transform. Table→cards conditional render. Toolbar stacking. Modal width fix.
+  Hamburger in header.
+
+**P1-T8b** — Parties page (CRUD: table/cards/modal, kind badge, control_account dropdown
+  filtered to is_control=true, mutate by UUID id) + Settings page (inline per-item edit:
+  3 scalar settings with PROVISIONAL badges + 6 asset-class rates displayed as % stored as
+  fraction via toFixed(4)).
+
+**P1-T8c** — Fixed Assets page (CRUD: table/cards/modal). Migration 0010 adds
+  `fixed_assets_write` policy + DML grant to authenticated so admin can write via RLS.
+  `accumulated_depreciation` absent from all INSERT/UPDATE payloads (Iron Law 1 — Phase 4
+  depreciation run is the sole writer). Entity dropdown + asset_class dropdown. Exact-money
+  cost (NUMERIC). Capitalisation-threshold hint (non-blocking). Deactivate-not-delete.
+
+**P1-T8d** — Users page + server-side create-user route.
+  Route: `apps/web/src/app/api/admin/create-user/route.ts` — admin check first (getUser +
+  app_users role), then service client (ONLY for auth.admin.createUser / deleteUser cleanup).
+  app_users INSERT uses the verified admin's SSR client (RLS path) NOT the service client
+  (service_role has BYPASSRLS but no table-level INSERT grant — "permission denied" is a
+  GRANT error, not an RLS error). Two-step create: cleanup on failure (deleteUser) so no
+  orphaned login-without-role. `SUPABASE_SERVICE_ROLE_KEY` server-only env var.
+  Users page: table/cards, role badges, self-deactivation blocked, entity shown for ENTRY.
+  No email column in app_users — email is set-at-creation only (lives in auth.users).
+
+**P1-T8e** — Admin-only gate + non-admin landing.
+  `(admin)/layout.tsx` gates on role: `if (appUser?.role !== 'ADMIN') redirect('/home')`.
+  Server-side, runs before any page renders (no flash). Null app_users row also redirected.
+  `/home` landing: branded header, name/role/clinic, "coming soon" message, sign-out.
+  Login redirect: LoginForm fetches role after sign-in → admin→/accounts, non-admin→/home.
+  Middleware: `user && /login → /` (root dispatches by role). Root page: role-aware redirect.
+
+**Key learnings this session (added to LEARNINGS.md / memory):**
+- BYPASSRLS ≠ table-level GRANTs. Use admin's session (RLS path) for PostgREST writes the
+  admin is already permitted. Service client reserved for GoTrue Admin API only.
+- service client server-side: `{ auth: { persistSession: false, autoRefreshToken: false } }`.
+- auth.admin.createUser (GoTrue) and from(table).insert (PostgREST) are different endpoints
+  that can fail independently — always clean up auth user if app_users insert fails.
+- Gate routes by role in the Server Component layout with redirect(), not client-side.
+
+---
+## Phase 2 design brainstorm — ANCHOR: docs/reference/ Excel files
+(Jalalabad real Google Form output: Revenue Entry 86 cols, Expense Entry, Stock Entry +
+Master Inventory). Managers capture STATISTICAL + FINANCIAL together, per service, per day.
+
+### Revenue form design (LOCKED):
+- One day = one revenue entry, via a GUIDED WIZARD:
+  Steps: date → outdoor/static (morning/evening/after-hours) → USG (by type) →
+  satellite (N teams, dynamic) → delivery (clinics that do it; C-section only JAL/NAS) →
+  financial wrap-up (deposits, cash-in-hand, reconciliation).
+- SAVE-AS-DRAFT + return (within-day interruption).
+- "Revenue Entry Management" page = list of days with status (submitted/draft/not-entered).
+  Batch-friendly: managers enter 2–3 days in one sitting, often days late.
+- DRAFT = staged form data, NOTHING posted. SUBMIT = posting engine fires (money→ledger)
+  + statistics written (counts→operational store). Reuses DRAFT→POSTED lifecycle.
+- Per-clinic adaptive (service matrix); dynamic satellite team count.
+
+### Expense form: one submission per expense. Re-skin existing + wire to posting engine.
+Current Expense Entry maps to chart: Budget Category+Sub-Category → 5000-series accounts.
+
+### KEY ARCHITECTURE — each revenue submission drives TWO writes:
+- MONEY → posting engine → journal entries (service charge→PI income, RDF sales→RDF income,
+  lab→lab income, etc.) → feeds FINANCIAL reports (R&P, I&E, Balance Sheet).
+- COUNTS → operational/statistics store (patients new/old, services by type, USG by type,
+  by team) → feeds STATISTICAL reports + the FUSED pivot ("5 patients earned X").
+  The ledger does NOT hold counts — they need their own table sharing entity+date.
+
+### THREE report types (Phase 4, shaped by the mapping):
+1. Financial (from ledger)
+2. Statistical (from counts)
+3. Fused pivot (counts × revenue) + executive summaries per clinic for HQ/board,
+   daily→monthly cadence.
+
+### FIRST TASK NEXT SESSION:
+Column-by-column mapping of Revenue Entry → (money: which ledger account) + (count: which
+statistic). Then design the operational/statistics data model, then the wizard + management page.
+
+### Open questions for next session:
+- Statistics grain: store counts per-day/service/team for free pivoting? (lean YES)
+- Exact account mapping per revenue line (verify against Blueprint §3).
+
+### Carried-forward gaps (not blocking Phase 2):
+- Fixed-asset disposal (gain/loss on sale) → Phase 4; needs disposal account + flow.
+- Bulk asset import → method TBD by volume when clinic Excel arrives.
+- Read-only chart reference for managers → Phase 2 (their surface, not the admin CRUD page).
+- /home placeholder → replaced by manager forms in Phase 2.
+- HQ-Finance panel access → deferred.
