@@ -37,7 +37,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isLoginPage) {
-    return NextResponse.redirect(new URL('/accounts', request.url))
+    // Let root page dispatch by role (admin→/accounts, non-admin→/home).
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
   return supabaseResponse

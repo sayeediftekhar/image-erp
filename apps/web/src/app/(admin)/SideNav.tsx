@@ -15,7 +15,7 @@ const NAV_SECTIONS = [
   {
     label: 'ADMINISTRATION',
     items: [
-      { label: 'Users',    href: '/users',    built: false },
+      { label: 'Users',    href: '/users',    built: true  },
       { label: 'Settings', href: '/settings', built: true  },
     ],
   },

@@ -28,7 +28,13 @@ export default function LoginForm() {
       return
     }
 
-    router.push('/accounts')
+    // Fetch role to send ADMIN→panel, everyone else→landing.
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: appUser } = user
+      ? await supabase.from('app_users').select('role').eq('id', user.id).single()
+      : { data: null }
+
+    router.push(appUser?.role === 'ADMIN' ? '/accounts' : '/home')
     router.refresh()
   }
 

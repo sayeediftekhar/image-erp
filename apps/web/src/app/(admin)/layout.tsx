@@ -22,6 +22,10 @@ export default async function AdminShellLayout({
     .eq('id', user.id)
     .single()
 
+  // Gate: only ADMIN may enter the panel. Non-admins (ENTRY, HQ_FINANCE, READ_ONLY)
+  // and users with no app_users row are sent to the non-admin landing.
+  if (appUser?.role !== 'ADMIN') redirect('/home')
+
   return (
     <AdminShell email={user.email ?? ''} role={appUser?.role ?? 'Unknown'}>
       {children}
