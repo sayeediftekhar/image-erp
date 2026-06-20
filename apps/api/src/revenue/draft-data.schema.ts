@@ -40,37 +40,37 @@ const SatelliteTeamSchema = z.object({
   usg:                 z.array(UsgEntrySchema).default([]),
 });
 
+// Admission-day fields only: advance paid + patient record for follow-up.
+// expected_balance / expected_date are the manager's estimates at admission;
+// both are optional because the final bill is unknowable until discharge.
+// Actual income is recognised at discharge via closeDeliveryBalance.
 const DeliveryBalanceEntrySchema = z.object({
   receipt_no:       z.string().optional(),
   patient_name:     z.string().min(1),
   phone:            z.string().optional(),
   advance:          z.number().min(0),
-  expected_balance: z.number().min(0),
-  expected_date:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected_date must be YYYY-MM-DD'),
+  expected_balance: z.number().min(0).default(0),
+  expected_date:    z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected_date must be YYYY-MM-DD').optional(),
 });
 
 const NvdSchema = z.object({
-  cases:              z.number().int().min(0).default(0),
-  service_charge:     z.number().min(0).default(0),
-  rdf_revenue:        z.number().min(0).default(0),
-  logistic_revenue:   z.number().min(0).default(0),
+  cases:            z.number().int().min(0).default(0),
+  service_charge:   z.number().min(0).default(0),
+  rdf_revenue:      z.number().min(0).default(0),
+  logistic_revenue: z.number().min(0).default(0),
 });
 
+// C-section admission shape: case count + advance records only.
+// Income fields (service_charge, rdf_revenue, logistic_revenue) are NOT captured
+// at admission — they belong to the itemized discharge bill (closeDeliveryBalance).
 const CsectionSchema = z.object({
-  cases:              z.number().int().min(0).default(0),
-  service_charge:     z.number().min(0).default(0),
-  rdf_revenue:        z.number().min(0).default(0),
-  logistic_revenue:   z.number().min(0).default(0),
-  balances:           z.array(DeliveryBalanceEntrySchema).default([]),
+  cases:    z.number().int().min(0).default(0),
+  balances: z.array(DeliveryBalanceEntrySchema).default([]),
 });
 
-// Safe delivery has no cases/service_charge (no PI income); only RDF + logistics.
-// Balances included per §3 "C-section + safe-delivery advances".
-const SafeDeliverySchema = z.object({
-  rdf_revenue:        z.number().min(0).default(0),
-  logistic_revenue:   z.number().min(0).default(0),
-  balances:           z.array(DeliveryBalanceEntrySchema).default([]),
-});
+// safe_delivery removed: it was the spreadsheet cross-check sum for NVD + C-section
+// combined (manually totalled by the manager). In the ERP, NVD and C-section are each
+// tracked separately, so retaining safe_delivery would double-count both streams.
 
 const OtherIncomeEntrySchema = z.object({
   description: z.string().min(1),
@@ -109,9 +109,8 @@ export const DraftDataSchema = z.object({
   }).default({}),
   satellite_teams:  z.array(SatelliteTeamSchema).default([]),
   delivery: z.object({
-    nvd:           NvdSchema.optional(),
-    csection:      CsectionSchema.optional(),
-    safe_delivery: SafeDeliverySchema.optional(),
+    nvd:      NvdSchema.optional(),
+    csection: CsectionSchema.optional(),
   }).default({}),
   other_income:     z.array(OtherIncomeEntrySchema).default([]),
   financial:        FinancialSchema,

@@ -3,6 +3,17 @@
 Durable quirks and facts. Add to this whenever something costs >5 min to rediscover.
 
 ## Discovered while building (newest first)
+- **C-section discharge cash distortion (P2-T2b):** all C-section discharge cash routes to
+  1010/PI as a deliberate simplification. The RDF income portions (4110/4130) do NOT carry
+  matching RDF cash — a known PI/RDF fund-cash distortion deferred to Phase 4/5 to resolve
+  against real data (touches the PI/RDF bank reconciliation). The posting engine enforces
+  Σ Dr = Σ Cr overall (not per-fund), so the entry is valid; the distortion is visible at
+  fund-level balance sheet. Do NOT rationalise this as "managers keep cash notionally as PI" —
+  it is a structural simplification with a known seam.
+- **pg driver returns PostgreSQL `date` columns as JS Date objects by default.** Cast to text
+  in the SELECT: `revenue_date::text AS revenue_date`. This keeps `entryDate` as a
+  `'YYYY-MM-DD'` string throughout the service and avoids `ZodError: Expected string, received
+  date` at PostTransactionSchema.parse. The pattern: cast early, never convert in application code.
 - **Next.js 14 does NOT support `next.config.ts` — TypeScript config is a Next.js 15
   feature.** Using `.ts` against an installed Next 14 throws "Configuring Next.js via
   next.config.ts is not supported" at dev start. Use `next.config.mjs` (ESM) or

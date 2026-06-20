@@ -19,8 +19,8 @@ select auth.login_as('11111111-1111-1111-1111-111111111111');
 -- ============================================================================
 
 select test.assert(
-  (select count(*)::int from public.settings) = 3,
-  'settings: exactly 3 rows seeded'
+  (select count(*)::int from public.settings) = 4,
+  'settings: 4 rows seeded (3 from 0003 + delivery_balance_flag_days from 0013)'
 );
 
 select test.assert(

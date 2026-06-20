@@ -283,6 +283,52 @@ statistic). Then design the operational/statistics data model, then the wizard +
 - Read-only chart reference for managers → Phase 2 (their surface, not the admin CRUD page).
 - /home placeholder → replaced by manager forms in Phase 2.
 - HQ-Finance panel access → deferred.
+- **C-section discharge fund-cash distortion (P2-T2b):** all discharge cash routes to 1010/PI
+  as a deliberate simplification. The RDF income portions (4110/4130) do NOT carry matching RDF
+  cash — a known PI/RDF fund-cash distortion. Resolution deferred to Phase 4/5, to be reconciled
+  against real data (touches the PI/RDF bank reconciliation). Do not attempt to "fix" this by
+  splitting discharge cash by fund until the bank-rec model is designed.
+- **Discharge-balance cash outside the daily wizard reconciliation seam (P2-T2b):** cash received
+  at discharge (and refunds out) is posted by closeDeliveryBalance, NOT by the daily revenue
+  wizard. The daily cash-reconciliation identity (`opening + income − deposit − advance = closing`)
+  does NOT include discharge-balance inflows or refund outflows. When the reconciliation UI is
+  built in P2-T3, it must account for: (a) C-section advance-in on admission day, (b) balance
+  cash-in on discharge day, and (c) refund cash-out on discharge day, as three distinct cash
+  movements outside the normal income term.
+- **closeDeliveryBalance entity-scoped authorisation (P2-T2b):** the close service currently
+  validates only `status=OPEN`; it does NOT verify that `actorId` belongs to the same entity as
+  `delivery_balance.entity_id`. When this gets a REST endpoint in P2-T3, the route handler must
+  enforce entity-scoped authorisation (ENTRY role may only close balances for their own entity)
+  before calling the service method.
+
+---
+## Session: 2026-06-21
+Branch: main
+
+**P2-T2 (committed cb1c59d)** — submitRevenueDay, delivery_balance table, postTransactionOnClient engine
+  extension. 53/53 Jest, 12 migration suites.
+
+**P2-T2b (pending commit — architect review + Sayeed verify)** — C-section holding-account correction.
+- Migration 0013: account 2150 (Patient Advances / Deposits Received, LIABILITY/CREDIT/PI),
+  setting delivery_balance_flag_days=4, delivery_balance final-bill columns (5 nullable columns
+  incl. close_entry_id FK to journal_entries ON DELETE RESTRICT).
+- draft-data.schema.ts: safe_delivery removed; csection simplified to {cases, balances} (no
+  income fields at admission); expected_balance/expected_date optional in DeliveryBalanceEntrySchema.
+- revenue.service.ts: buildIncomeInput — removed csection and safe_delivery income blocks;
+  added buildCsectionAdvanceInput (Dr 1010/PI, Cr 2150/PI per day); Step 6b in submitRevenueDay;
+  csectionAdvanceEntryId in SubmitResult; writeDeliveryBalances — removed safe_delivery loop;
+  added closeDeliveryBalance (balance-by-construction proof in comment; idempotency on OPEN guard;
+  postTransactionOnClient is sole line-writer; fund-cash distortion documented); added
+  getFlaggedOpenBalances (uses revenue_date not created_at for ageing).
+- Tests: T1 fixture corrected (safe_delivery removed, csection income fields removed); T1
+  extended (csection advance assertions); T9-T15 new (admission/discharge/refund/idempotency/
+  cross-day/ageing). 60/60 Jest, 13 migration suites.
+- 0003 settings test count updated: 3→4 (delivery_balance_flag_days is the 4th setting).
+- CONTEXT.md carried-forward gaps: fund-cash distortion, reconciliation seam, entity authz.
+- LEARNINGS.md: fund-cash distortion documented; pg date→JS Date learning.
+
+Next: P2-T3 — revenue wizard UI + management page (produces draft_data; surfaces close-balance
+  and ageing; P2-T2b carried-forward seams get their UI integration then).
 
 ---
 ## Phase 2 status — data-model design complete
