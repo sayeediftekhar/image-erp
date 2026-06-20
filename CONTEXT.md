@@ -283,3 +283,23 @@ statistic). Then design the operational/statistics data model, then the wizard +
 - Read-only chart reference for managers → Phase 2 (their surface, not the admin CRUD page).
 - /home placeholder → replaced by manager forms in Phase 2.
 - HQ-Finance panel access → deferred.
+
+---
+## Phase 2 status — data-model design complete
+
+**Phase 1 is complete and deployed** (migrations 0001–0010, posting engine, admin panel T8a–T8e,
+live on Supabase).
+
+**Phase 2 has begun** with the data-model design: every manager-entry field has been mapped to
+(a) the ledger (which account, which fund) and (b) the statistics store (which count, which
+dimension). This work is captured in `docs/tasks/Phase2_Revenue_Mapping_v2.md`.
+
+**`Phase2_Revenue_Mapping_v2.md` is the locked canonical artifact** for the manager revenue
++ expense forms. All open questions (Q1–Q5 + expense model) are resolved with Sayeed and
+recorded there. Do not derive account mappings, fund routing, or statistics grain from any
+other source — v2 is authoritative.
+
+**Next step: design the revenue wizard screen flow** (steps → per-screen field list →
+save-draft + management page layout) before any component, form, table, or migration is built.
+Wizard structure follows §1 service groups in v2: date → outdoor/static → USG → satellite →
+delivery → financial wrap-up. Screen-flow design first; code after Sayeed approves.
