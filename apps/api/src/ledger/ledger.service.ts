@@ -337,14 +337,39 @@ export class LedgerService {
     }
   }
 
+  // Called by the revenue submit service (P2-T2) so all three postings (income,
+  // deposit, advance) plus daily_activity + delivery_balance + revenue_day flip
+  // share ONE caller-managed transaction. The caller owns BEGIN/COMMIT/ROLLBACK;
+  // this method writes journal_entries + journal_lines using the provided client.
+  // The engine's core (postTransaction, checkBalance, determineStatus, writeEntry)
+  // is unchanged — this is an extension, not a modification.
+  async postTransactionOnClient(
+    client: PoolClient,
+    input: unknown,
+    actorId: unknown,
+  ): Promise<string> {
+    const actor = z
+      .string()
+      .uuid('actorId must be a valid UUID (Law 3: no unattributed write)')
+      .parse(actorId);
+    const parsed = PostTransactionSchema.parse(input);
+    this.checkBalance(parsed.lines);
+    // determineStatus reads from this.pool (independent of the client transaction):
+    // it only reads settings + accounts, which are stable during the outer txn.
+    const status = await this.determineStatus(parsed, false);
+    return this.writeEntry(parsed, status, actor, client);
+  }
+
   private async writeEntry(
     input: PostTransactionInput,
     status: JournalStatus,
     actorId: string,
+    externalClient?: PoolClient,
   ): Promise<string> {
-    const client: PoolClient = await this.pool.connect();
+    const client = externalClient ?? await this.pool.connect();
+    const ownsClient = !externalClient;
     try {
-      await client.query('BEGIN');
+      if (ownsClient) await client.query('BEGIN');
 
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO public.journal_entries
@@ -389,13 +414,13 @@ export class LedgerService {
         );
       }
 
-      await client.query('COMMIT');
+      if (ownsClient) await client.query('COMMIT');
       return entryId;
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (ownsClient) await client.query('ROLLBACK');
       throw err;
     } finally {
-      client.release();
+      if (ownsClient) client.release();
     }
   }
 }
