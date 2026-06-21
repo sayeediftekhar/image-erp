@@ -191,7 +191,7 @@ export default function RevenueManagementClient({
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="min-h-full flex flex-col"
       style={{ background: 'linear-gradient(145deg, #07043a 0%, #0F0A52 55%, #1a0c7a 100%)' }}
     >
       {/* ── Header ───────────────────────────────────────────────────────── */}
@@ -237,7 +237,7 @@ export default function RevenueManagementClient({
       </div>
 
       {/* ── Day list ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 bg-gray-50 rounded-t-3xl px-4 pt-5 pb-6 overflow-auto">
+      <div className="flex-1 bg-gray-50 rounded-t-3xl px-4 pt-5 pb-6">
         {/* max-width container: rows read as an intentional column on desktop;
             on mobile (< 680px) this wrapper has no visual effect. */}
         <div className="max-w-[680px] mx-auto">

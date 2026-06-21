@@ -14,7 +14,7 @@ export default async function WizardPlaceholderPage({ searchParams }: Props) {
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="min-h-full flex flex-col"
       style={{ background: 'linear-gradient(145deg, #07043a 0%, #0F0A52 55%, #1a0c7a 100%)' }}
     >
       <header className="px-4 pt-5 pb-4">

@@ -35,7 +35,7 @@ export default function LoginForm() {
       : { data: null }
 
     if (appUser?.role === 'ADMIN')       router.push('/accounts')
-    else if (appUser?.role === 'ENTRY') router.push('/revenue')
+    else if (appUser?.role === 'ENTRY') router.push('/dashboard')
     else                                router.push('/home')
     router.refresh()
   }

@@ -15,6 +15,6 @@ export default async function RootPage() {
     .single()
 
   if (appUser?.role === 'ADMIN')       redirect('/accounts')
-  else if (appUser?.role === 'ENTRY') redirect('/revenue')
+  else if (appUser?.role === 'ENTRY') redirect('/dashboard')
   else                                redirect('/home')
 }
