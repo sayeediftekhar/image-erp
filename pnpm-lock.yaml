@@ -62,6 +62,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@image-erp/posting-engine':
+        specifier: workspace:*
+        version: link:../../packages/posting-engine
       '@supabase/ssr':
         specifier: ^0.5.0
         version: 0.5.2(@supabase/supabase-js@2.108.2)
@@ -70,7 +73,10 @@ importers:
         version: 2.108.2
       next:
         specifier: '14'
-        version: 14.2.35(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 14.2.35(@babel/core@7.29.7)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      pg:
+        specifier: ^8.13.0
+        version: 8.21.0
       react:
         specifier: ^18
         version: 18.3.1
@@ -81,9 +87,15 @@ importers:
         specifier: ^3
         version: 3.25.76
     devDependencies:
+      '@types/jest':
+        specifier: ^29.5.0
+        version: 29.5.14
       '@types/node':
         specifier: ^20
         version: 20.19.43
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
       '@types/react':
         specifier: ^18
         version: 18.3.31
@@ -93,12 +105,18 @@ importers:
       autoprefixer:
         specifier: ^10
         version: 10.5.0(postcss@8.4.31)
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.19.43)
       postcss:
         specifier: ^8
         version: 8.4.31
       tailwindcss:
         specifier: ^3
         version: 3.4.19
+      ts-jest:
+        specifier: ^29.2.0
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.29.7))(jest-util@29.7.0)(jest@29.7.0(@types/node@20.19.43))(typescript@5.9.3)
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -4977,7 +4995,7 @@ snapshots:
 
   neo-async@2.6.2: {}
 
-  next@14.2.35(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  next@14.2.35(@babel/core@7.29.7)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       '@next/env': 14.2.35
       '@swc/helpers': 0.5.5
@@ -4987,7 +5005,7 @@ snapshots:
       postcss: 8.4.31
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      styled-jsx: 5.1.1(react@18.3.1)
+      styled-jsx: 5.1.1(@babel/core@7.29.7)(react@18.3.1)
     optionalDependencies:
       '@next/swc-darwin-arm64': 14.2.33
       '@next/swc-darwin-x64': 14.2.33
@@ -5491,10 +5509,12 @@ snapshots:
     dependencies:
       '@tokenizer/token': 0.3.0
 
-  styled-jsx@5.1.1(react@18.3.1):
+  styled-jsx@5.1.1(@babel/core@7.29.7)(react@18.3.1):
     dependencies:
       client-only: 0.0.1
       react: 18.3.1
+    optionalDependencies:
+      '@babel/core': 7.29.7
 
   sucrase@3.35.1:
     dependencies:

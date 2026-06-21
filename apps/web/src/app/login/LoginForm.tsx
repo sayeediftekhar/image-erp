@@ -34,7 +34,9 @@ export default function LoginForm() {
       ? await supabase.from('app_users').select('role').eq('id', user.id).single()
       : { data: null }
 
-    router.push(appUser?.role === 'ADMIN' ? '/accounts' : '/home')
+    if (appUser?.role === 'ADMIN')       router.push('/accounts')
+    else if (appUser?.role === 'ENTRY') router.push('/revenue')
+    else                                router.push('/home')
     router.refresh()
   }
 
