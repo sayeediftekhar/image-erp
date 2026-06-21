@@ -10,6 +10,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@image-erp/posting-engine':
+        specifier: workspace:*
+        version: link:../../packages/posting-engine
       '@nestjs/common':
         specifier: ^10.0.0
         version: 10.4.22(reflect-metadata@0.1.14)(rxjs@7.8.2)
@@ -98,6 +101,22 @@ importers:
         version: 3.4.19
       typescript:
         specifier: ^5
+        version: 5.9.3
+
+  packages/posting-engine:
+    dependencies:
+      pg:
+        specifier: ^8.13.0
+        version: 8.21.0
+      zod:
+        specifier: ^3.22.0
+        version: 3.25.76
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
+      typescript:
+        specifier: ^5.4.0
         version: 5.9.3
 
 packages:

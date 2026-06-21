@@ -3,15 +3,17 @@
 > Cold-handoff doc. Read this + LEARNINGS.md before any session. Authority on
 > financial design: `IMAGE_Finance_System_Blueprint_v3.md`. Authority on process:
 > `IMAGE_ERP_Build_Guidelines.md`. Build order: `IMAGE_ERP_Build_Plan.md`.
+> Phase 2 locked artifacts: `docs/tasks/Phase2_Revenue_Mapping_v2.md` (account
+> mapping, canonical) · `docs/phase2/wizard_design.md` (screen flow, locked).
 
 ## Phase 0 — ratified
 - **Stack:** Supabase (managed Postgres + Auth + RLS + Storage + daily backups) +
   NestJS (business logic / posting engine) + Next.js 14 (admin + entry web).
   Expo deferred to inventory floor-entry. Money = `NUMERIC(15,2)`, BDT only.
   Zod on every input. pnpm monorepo.
-- **Still operational (Sayeed's to action):** create Supabase project; git repo with
-  separate dev/prod; confirm each clinic's connectivity (flaky → offline-tolerant
-  entry becomes required).
+- **Still operational (Sayeed's to action):** confirm each clinic's connectivity
+  (flaky → offline-tolerant entry becomes required).
+  *(Supabase project created and deployed; git repo in place — both done.)*
 
 ## Design decisions locked (this session)
 - **Module integration = control-account pattern.** Each future module (payroll,
@@ -64,7 +66,7 @@ is used — that table is T4. **Both triggers moved to T4.** T1 ships the full
 structure, `active` deactivate flag, CHECK constraints, RLS, audit columns, and the
 FK-RESTRICT slice of "deactivate, don't delete".
 
-## Phase 1 task list
+## Phase 1 task list — ALL COMPLETE (see session logs below)
 - **P1-T1 — Dimension schema + RLS — DONE (this session).**
 - P1-T2 — Audit infrastructure: `audit.audit_log` + generic audit trigger; app role
   INSERT-only on audit; attach to T1 tables. (L3 full coverage.)
@@ -308,7 +310,10 @@ Branch: main
 **P2-T2 (committed cb1c59d)** — submitRevenueDay, delivery_balance table, postTransactionOnClient engine
   extension. 53/53 Jest, 12 migration suites.
 
-**P2-T2b (pending commit — architect review + Sayeed verify)** — C-section holding-account correction.
+**P2-T2b (committed a6be9bb, CLOSED)** — C-section holding-account correction.
+  Verified via live postings: advance Dr 1010/PI + Cr 2150/PI on admission;
+  discharge bill split 4030/PI + 4110/RDF + 4130/RDF with 2150 released,
+  balance-by-construction confirmed. Migration 0013 applied to live Supabase.
 - Migration 0013: account 2150 (Patient Advances / Deposits Received, LIABILITY/CREDIT/PI),
   setting delivery_balance_flag_days=4, delivery_balance final-bill columns (5 nullable columns
   incl. close_entry_id FK to journal_entries ON DELETE RESTRICT).
@@ -327,25 +332,25 @@ Branch: main
 - CONTEXT.md carried-forward gaps: fund-cash distortion, reconciliation seam, entity authz.
 - LEARNINGS.md: fund-cash distortion documented; pg date→JS Date learning.
 
-Next: P2-T3 — revenue wizard UI + management page (produces draft_data; surfaces close-balance
-  and ageing; P2-T2b carried-forward seams get their UI integration then).
+Next: P2-T3 — revenue wizard UI + management page (produces draft_data; surfaces
+  close-balance and ageing; P2-T2b carried-forward seams get their UI integration then).
 
 ---
-## Phase 2 status — data-model design complete
+## Phase 2 status
 
 **Phase 1 is complete and deployed** (migrations 0001–0010, posting engine, admin panel T8a–T8e,
 live on Supabase).
 
-**Phase 2 has begun** with the data-model design: every manager-entry field has been mapped to
-(a) the ledger (which account, which fund) and (b) the statistics store (which count, which
-dimension). This work is captured in `docs/tasks/Phase2_Revenue_Mapping_v2.md`.
+**Phase 2 data-model and backend are done:**
+- `docs/tasks/Phase2_Revenue_Mapping_v2.md` — canonical account + statistics mapping (locked).
+  Do not derive account mappings, fund routing, or statistics grain from any other source.
+- `docs/phase2/wizard_design.md` — wizard screen flow (locked).
+- P2-T1: revenue_day + daily_activity + delivery_balance schema (migration 0011/0012).
+- P2-T2: submitRevenueDay service, postTransactionOnClient engine extension (committed cb1c59d).
+- P2-T2b: C-section holding-account (account 2150, closeDeliveryBalance, ageing query),
+  migration 0013 (committed a6be9bb, live on Supabase).
 
-**`Phase2_Revenue_Mapping_v2.md` is the locked canonical artifact** for the manager revenue
-+ expense forms. All open questions (Q1–Q5 + expense model) are resolved with Sayeed and
-recorded there. Do not derive account mappings, fund routing, or statistics grain from any
-other source — v2 is authoritative.
-
-**Next step: design the revenue wizard screen flow** (steps → per-screen field list →
-save-draft + management page layout) before any component, form, table, or migration is built.
-Wizard structure follows §1 service groups in v2: date → outdoor/static → USG → satellite →
-delivery → financial wrap-up. Screen-flow design first; code after Sayeed approves.
+**Next: P2-T3** — revenue wizard UI + management page (Next.js). Produces draft_data via the
+  guided wizard; includes management list (draft/submitted/not-entered); surfaces close-balance
+  workflow and ageing flag. P2-T2b carried-forward seams (reconciliation identity, entity authz
+  on close endpoint) land here.

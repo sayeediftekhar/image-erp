@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import { Pool } from 'pg';
-import { LedgerService } from '../src/ledger/ledger.service';
-import { RevenueService } from '../src/revenue/revenue.service';
+import { LedgerService, RevenueService } from '@image-erp/posting-engine';
 
 const DB_URL = process.env.DATABASE_URL ?? 'postgresql:///erp_test?host=/tmp';
 const ACTOR_ID = '11111111-1111-1111-1111-111111111111';
