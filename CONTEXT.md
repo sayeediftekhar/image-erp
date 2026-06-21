@@ -332,8 +332,7 @@ Branch: main
 - CONTEXT.md carried-forward gaps: fund-cash distortion, reconciliation seam, entity authz.
 - LEARNINGS.md: fund-cash distortion documented; pg date→JS Date learning.
 
-Next: P2-T3 — revenue wizard UI + management page (produces draft_data; surfaces
-  close-balance and ageing; P2-T2b carried-forward seams get their UI integration then).
+Next: P2-T3-shell — manager app shell (header + sign-out + back nav + role landing), the T8a-equivalent the manager surface skipped; THEN P2-T3b (wizard shell + day-setup).
 
 ---
 ## Phase 2 status
@@ -350,7 +349,6 @@ live on Supabase).
 - P2-T2b: C-section holding-account (account 2150, closeDeliveryBalance, ageing query),
   migration 0013 (committed a6be9bb, live on Supabase).
 
-**Next: P2-T3** — revenue wizard UI + management page (Next.js). Produces draft_data via the
-  guided wizard; includes management list (draft/submitted/not-entered); surfaces close-balance
-  workflow and ageing flag. P2-T2b carried-forward seams (reconciliation identity, entity authz
-  on close endpoint) land here.
+**Next: P2-T3-shell** — manager app shell (header + sign-out + back nav + role landing), the T8a-equivalent the manager surface skipped; THEN P2-T3b (wizard shell + day-setup).
+
+*Design decision:* Manager-shell task inserted before T3b — the manager surface (T3a) was built without the persistent-shell step that the admin panel got in T8a; inserting it now keeps the plan's shell-before-pages order.

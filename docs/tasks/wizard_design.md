@@ -130,7 +130,8 @@ The wizard shows only the steps/fields a clinic uses; design against JAL (the mo
 pilot) and the rest are subsets.
 
 ## Task slicing (P2-T3a–e)
-- **P2-T3a** — Revenue Entry Management page (Screen 1) + mark-closed zero-day. *(in progress)*
+- **P2-T3a** — Revenue Entry Management page (Screen 1) + mark-closed zero-day. *(done — committed 38083bd)*
+- **P2-T3-shell** — Manager app shell: persistent header (logo, role/clinic display, sign-out), back/return-to-list navigation, role-correct landing. The manager-side parallel to the admin T8a shell; built before the wizard so T3b–e live inside it.
 - **P2-T3b** — Wizard shell + draft lifecycle + Step 1 day-setup (channels-active).
 - **P2-T3c** — Session screens (Morning / Evening / After-hours / Satellite) producing the income +
   counts portion of draft_data. **Gate:** reconcile `Phase2_Revenue_Mapping_v2.md` §1/§3/§7 to the
