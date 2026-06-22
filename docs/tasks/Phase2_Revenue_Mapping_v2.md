@@ -5,7 +5,9 @@ maps to (a) the **ledger** (journal entries) and (b) the **statistics store** (c
 wizard form, the expense form, and all three report types are built backwards from this.
 Built from and validated against the real Jalalabad Google Form export.
 
-**Status:** v2 — LOCKED (all open questions Q1–Q5 resolved with Sayeed; expense model resolved).
+**Status:** v2 — LOCKED, with §1/§3/§7 C-section sections REVISED per P2-T2b (2150 advance-holding
+model) on 2026-06-22. The revision supersedes the original cash-basis C-section wording. All other
+sections unchanged.
 
 **Principles honoured:** Iron Law 1 (figures are deterministic, never AI), Law 2 (Σdr=Σcr via the
 posting engine, the sole writer), Law 4 (every line tagged entity + fund), Law 6 (RDF purchases →
@@ -75,13 +77,22 @@ the common accounts, team tag separates them in stats.*
 | NVD service charge | — | Cr **4020 PI-NVD** | PI |
 | NVD RDF / logistics | — | 4110 / 4130 | RDF |
 
-### C-Section (JAL/NAS only) — CASH BASIS (see §3 for the balance tracker)
-| C-Section #cases | csection_cases | — | — |
-| C-Section service charge (the amount actually paid) | — | Cr **4030 PI-C-Section** | PI |
-| C-Section RDF / logistics | — | 4110 / 4130 | RDF |
+### C-Section (JAL/NAS only) — ADVANCE-HOLDING MODEL (see §3 for the lifecycle)
+At daily entry, C-section captures ONLY the case count and the advance(s) received today.
+NO income (4030/4110/4130) is posted at admission — the income is the itemized discharge bill,
+recognised later via `closeDeliveryBalance` (see §3).
+| Manager enters | → Statistics | → Ledger | Fund |
+|---|---|---|---|
+| C-Section #cases | csection_cases — STATIC/CSECTION | — | — |
+| C-Section advance received today | — | Dr **1010 Cash** / Cr **2150 Patient Advances** | PI |
+*The advance is HELD as a liability (2150), not booked as income. Per-day all C-section advances
+combine into one entry (Dr 1010/PI, Cr 2150/PI). Income is recognised at discharge — see §3.*
 
-### Safe Delivery (RDF + logistics; advance may leave a balance → §3)
-| Safe Delivery RDF / logistics revenue | — | 4110 / 4130 | RDF |
+### Safe Delivery — REMOVED (not an income line)
+"Safe Delivery" was the spreadsheet's parent grouping of NVD + C-section, manually totalled as a
+cross-check. It is NOT a distinct income stream. Booking it would double-count the RDF/logistics
+already captured under NVD (same-day) and under the C-section discharge bill. It is removed from
+the model entirely — there is no `safe_delivery` field, account, or posting.
 
 ### Other Income
 | Other income — description + amount | (description as note) | Cr **4090 PI-Other** | PI |
@@ -112,22 +123,43 @@ cheque view. (Accrual postings, not the daily revenue form.)
 
 ---
 
-## 3. DELIVERY-BALANCE TRACKER (C-Section + Safe-Delivery) — memo + ageing, NOT a receivable
+## 3. DELIVERY-BALANCE: C-SECTION ADVANCE-HOLDING MODEL (2150) + ageing follow-up
 
-**Locked (Q1): CASH BASIS.** Full fee is unknown at admission and patients negotiate the final
-bill (common in BD) — so we do NOT post a "full expected fee" receivable (it would be a fiction).
-Each payment is income WHEN received: `Dr Cash / Cr 4030` (advance), then `Dr Cash / Cr 4030`
-(balance, whatever it finally is).
+**Locked (Q1, revised per P2-T2b): ADVANCE-HOLDING, income recognised at DISCHARGE.** The final
+bill is unknown and negotiable at admission (common in BD), so we do NOT recognise income at
+admission and do NOT post a fixed receivable (1320) — both would be fictions. Instead:
 
-**The tracker is a MEMO/follow-up tool, not posted income:**
-- Captures (structured fields, not free text): receipt/registration number(s), patient name,
-  phone, advance paid, expected balance, expected date.
-- It does NOT post a 1320 receivable (amount uncertain). It's a **reminder list with AGEING**
-  (0–3 days / overdue) that NUDGES the manager: an overdue/open balance = "record the balance
-  payment — make sure that income got captured." Daily-scrutiny applied to delivery income.
-- **Scope: inpatient C-section (+ safe-delivery advances). A financial follow-up tool — NOT a
-  patient record system.** Real patient identity (IDs, dedup, merge, counselor role) = FUTURE
-  outpatient/inpatient module, linked back via the PHONE number captured here.
+- **Admission day (daily wizard):** the advance received is cash HELD as a liability —
+  `Dr 1010 Cash (PI) / Cr 2150 Patient Advances`. NOT income. A `delivery_balance` row is opened
+  (status OPEN) with the patient/advance details.
+- **Discharge day (`closeDeliveryBalance`, NOT the daily wizard):** the itemized bill is the
+  income, recognised in full on the discharge day — `Dr 2150` (release the held advance) +
+  `Dr 1010` (balance received) / `Cr 4030` (service + seat rent, PI) + `Cr 4110` (medicines, RDF)
+  + `Cr 4130` (logistics, RDF). Overpayment → `Cr 1010` refund. The row flips CLOSED. Balanced by
+  construction (proven in P2-T2b).
+
+**The `delivery_balance` tracker — a follow-up tool with ageing, not a receivable:**
+- Captures (structured, not free text): receipt/registration number(s), patient name, phone,
+  advance paid; expected balance / expected date are OPTIONAL (unknowable at admission).
+- It does NOT post a 1320 receivable. It is an OPEN/CLOSED follow-up list with AGEING
+  (`getFlaggedOpenBalances`, flagged at > `delivery_balance_flag_days`, default 4 — a C-section
+  stay is ~3 days) that NUDGES the manager: an overdue OPEN balance = "record the discharge bill —
+  make sure that income got captured." Daily-scrutiny applied to delivery income.
+- **Reconciliation that proves it's right:** at month-end the 2150 balance must equal the sum of
+  all OPEN delivery-balance advances. If 2150 > open advances, a discharge bill was likely missed
+  (an advance never got closed) — which the >N-day ageing flag catches.
+- **Scope: inpatient C-section. A financial follow-up tool — NOT a patient record system.** Real
+  patient identity (IDs, dedup, merge, counselor) = future patient module, linked via the PHONE
+  captured here.
+
+**Known seams (logged, deferred — see CONTEXT carried-forward gaps):**
+- *Fund-cash distortion:* all discharge cash routes to 1010/PI even though 4110/4130 are RDF
+  income, so RDF earns income without matching RDF cash — deliberate simplification, resolved
+  against real data at Phase 4/5 bank-rec.
+- *Reconciliation seam:* discharge-balance cash (and refunds) post via `closeDeliveryBalance` on a
+  different day than admission, OUTSIDE the daily wizard's income term — the daily reconciliation
+  identity must account for advances-in (admission day) separately; discharge-day cash is a
+  P2-T3d/e integration item.
 
 ---
 
@@ -233,8 +265,11 @@ cases). Enables free pivoting + the fused join to ledger income on entity+date+s
 ---
 
 ## 7. Resolved decisions (Q1–Q5 + expense)
-- **Q1** C-section: cash basis; income when paid; delivery tracker = memo + ageing nudge (no
-  posted receivable — fee unknown/negotiable).
+- **Q1 (revised per P2-T2b)** C-section: ADVANCE-HOLDING model. Advance held as a liability (2150)
+  at admission, NOT income; the full itemized bill is income at discharge (`closeDeliveryBalance`,
+  split 4030/4110/4130, 2150 released). No posted receivable (fee unknown/negotiable). Delivery
+  tracker = OPEN/CLOSED follow-up with ageing nudge. "Safe Delivery" removed (parent grouping, not
+  an income line — would double-count).
 - **Q2** out-of-policy cash expense → PENDING_APPROVAL exception path; recon mismatch catches the
   unrecorded; redeposit modeled as explicit bank→cash replenishment.
 - **Q3** one notional cash drawer, handled as PI (1010).
