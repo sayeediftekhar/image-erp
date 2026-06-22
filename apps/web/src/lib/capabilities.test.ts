@@ -26,11 +26,11 @@ describe('getEntityCapabilities', () => {
     expect(c.sessions.afterhours).toBe(true)
   })
 
-  it('KAT: nvd, no csection, no satellite', () => {
+  it('KAT: nvd, no csection, satellite (confirmed all-five-clinics)', () => {
     const c = getEntityCapabilities('KAT')
     expect(c.delivery.nvd).toBe(true)
     expect(c.delivery.csection).toBe(false)
-    expect(c.satellite).toBe(false)
+    expect(c.satellite).toBe(true)
   })
 
   it('CHA: morning + satellite only — no evening, no afterhours, no delivery', () => {

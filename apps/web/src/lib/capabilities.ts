@@ -19,7 +19,7 @@ const MATRIX: Record<string, EntityCapabilities> = {
   JAL: { sessions: { morning: true,  evening: true,  afterhours: true  }, satellite: true,  delivery: { nvd: true,  csection: true  } },
   NAS: { sessions: { morning: true,  evening: true,  afterhours: true  }, satellite: true,  delivery: { nvd: true,  csection: true  } },
   AMB: { sessions: { morning: true,  evening: true,  afterhours: true  }, satellite: true,  delivery: { nvd: true,  csection: false } },
-  KAT: { sessions: { morning: true,  evening: true,  afterhours: true  }, satellite: false, delivery: { nvd: true,  csection: false } },
+  KAT: { sessions: { morning: true,  evening: true,  afterhours: true  }, satellite: true,  delivery: { nvd: true,  csection: false } },
   CHA: { sessions: { morning: true,  evening: false, afterhours: false }, satellite: true,  delivery: { nvd: false, csection: false } },
 }
 

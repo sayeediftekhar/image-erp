@@ -13,27 +13,31 @@ content where the backend exists, honest phase-labelled stubs for the rest.
 ---
 
 ## 0. What the manager does (the workflow the nav must mirror)
+
 A clinic manager, on a phone, has a few distinct jobs with different rhythms:
+
 - **Enter revenue** — daily-ish, often batched days late ("what haven't I done?").
 - **Enter expenses** — periodic, voucher/cheque-driven (future task).
 - **Chase delivery balances** — ongoing C-section admit→discharge follow-up (JAL/NAS only).
 - **Review** — their clinic's I&E, operational stats, and bank reconciliation (Phase 4/5).
-The nav mirrors these JOBS, not the database tables. The manager's true landing is "what needs my
-attention," not a static menu — so Home is an attention aggregator, not a logo splash.
+  The nav mirrors these JOBS, not the database tables. The manager's true landing is "what needs my
+  attention," not a static menu — so Home is an attention aggregator, not a logo splash.
 
 ## 1. The six destinations (the manager's whole world)
-| # | Destination | Status today | Built by |
-|---|---|---|---|
-| 1 | **Home / Dashboard** | REAL (this task) | P2-T3-shell |
-| 2 | **Revenue** | REAL (exists) | P2-T3a (→ wizard T3b–d) |
-| 3 | **Expenses** | STUB (phase-labelled) | future Phase 2 task |
-| 4 | **Deliveries** | REAL-MINIMAL (backend exists) | list here; full UI P2-T3e |
-| 5 | **Reports** | STUB (phase-labelled) | Phase 4 |
-| 6 | **Bank Reconciliation** | STUB (phase-labelled) | Phase 5 |
+
+| #   | Destination             | Status today                  | Built by                  |
+| --- | ----------------------- | ----------------------------- | ------------------------- |
+| 1   | **Home / Dashboard**    | REAL (this task)              | P2-T3-shell               |
+| 2   | **Revenue**             | REAL (exists)                 | P2-T3a (→ wizard T3b–d)   |
+| 3   | **Expenses**            | STUB (phase-labelled)         | future Phase 2 task       |
+| 4   | **Deliveries**          | REAL-MINIMAL (backend exists) | list here; full UI P2-T3e |
+| 5   | **Reports**             | STUB (phase-labelled)         | Phase 4                   |
+| 6   | **Bank Reconciliation** | STUB (phase-labelled)         | Phase 5                   |
 
 **Grouping — doing vs viewing:**
-- *Doing* (act on something): Home, Revenue, Expenses, Deliveries.
-- *Viewing* (read a result): Reports, Bank Reconciliation.
+
+- _Doing_ (act on something): Home, Revenue, Expenses, Deliveries.
+- _Viewing_ (read a result): Reports, Bank Reconciliation.
 
 **Manager report-access scope (from CONTEXT — enforce in the stub labels so expectations are
 right):** managers see THEIR clinic's Income & Expenditure (cost-recovery), operational/statistical
@@ -42,29 +46,33 @@ the balance sheet, cross-entity consolidation, or the board report (HQ/Admin onl
 Bank-Rec stubs should describe the manager-scoped version, not promise the full accounting stack.
 
 ## 2. Navigation layout (mobile-primary, adaptive)
+
 Managers are on phones — design mobile-first, desktop is the widened case.
 
-- **Mobile (primary): bottom tab-bar** with the four *doing* destinations — Home, Revenue,
+- **Mobile (primary): bottom tab-bar** with the four _doing_ destinations — Home, Revenue,
   Expenses, Deliveries — plus a **"More"** entry that opens Reports + Bank Reconciliation (and
-  sign-out/identity if not in a header). Five slots max on a bottom bar; the two *viewing*
+  sign-out/identity if not in a header). Five slots max on a bottom bar; the two _viewing_
   destinations live behind More until they're real surfaces.
-- **Desktop (widened): sidebar** showing all six, grouped with a divider: *doing* (Home, Revenue,
-  Expenses, Deliveries) above, *viewing* (Reports, Bank Reconciliation) below. Mirrors the admin
+- **Desktop (widened): sidebar** showing all six, grouped with a divider: _doing_ (Home, Revenue,
+  Expenses, Deliveries) above, _viewing_ (Reports, Bank Reconciliation) below. Mirrors the admin
   SideNav's grouped pattern (FINANCE / ADMINISTRATION) so admin and manager feel like one app.
 - The active destination is clearly indicated. 44px touch targets, 16px min font.
 
 ## 3. Per-clinic adaptation (the nav itself flexes)
+
 The same service-matrix logic that drives the wizard steps drives which nav items appear:
+
 - **JAL / NAS:** all six (they do C-section → Deliveries shown).
 - **AMB / KAT:** Deliveries is NVD-only; for THIS task, show Deliveries (NVD balances are not
   tracked as advances, so the Deliveries surface may be near-empty — acceptable; or hide if the
   service matrix says no advance-tracked deliveries). Flag your reading in the plan.
 - **CHA:** NO delivery channel at all → **Deliveries hidden entirely** from the nav.
-A manager never sees a destination for something their clinic doesn't do. Resolve the clinic's
-capabilities from a single service-matrix source (entity code → capabilities), not scattered
-conditionals — so the wizard (T3b) can reuse it.
+  A manager never sees a destination for something their clinic doesn't do. Resolve the clinic's
+  capabilities from a single service-matrix source (entity code → capabilities), not scattered
+  conditionals — so the wizard (T3b) can reuse it.
 
 ## 4. The Home dashboard (the piece that makes nav a workflow)
+
 The landing surface. NOT a static welcome — an aggregator of the manager's open loops, each a
 tap-through to the surface that resolves it. Build with REAL data where the backend exists:
 
@@ -74,7 +82,7 @@ tap-through to the surface that resolves it. Build with REAL data where the back
   in scope.)
 - **Overdue delivery balances** (JAL/NAS): count + the oldest few, tap → Deliveries. Source:
   `getFlaggedOpenBalances(entityId)` — the P2-T2b ageing query (uses `revenue_date`, flags
-  > `delivery_balance_flag_days`). This already exists; call it, don't rebuild it. Entity-scoped.
+    > `delivery_balance_flag_days`). This already exists; call it, don't rebuild it. Entity-scoped.
 - **Month-at-a-glance** (light): the same Entered/Draft/Missing counts strip T3a has, so Home
   answers "how's my month" at a glance.
 - **Expenses-pending / Reports-ready**: placeholders for now (no backend) — show nothing or a
@@ -86,7 +94,9 @@ No estimated, inferred, or placeholder numbers presented as real. A stub tile sh
 fake one.
 
 ## 5. The header (identity + sign-out)
+
 A persistent header across all `(manager)` pages:
+
 - **Identity block:** manager name + role + **clinic NAME** (e.g. "Jalalabad", not "JAL") —
   resolve the entity name from `entities.name`. Role/entity already resolved in the
   `(manager)/layout.tsx` from P2-T3a — reuse it; do not add a second resolution path.
@@ -96,7 +106,9 @@ A persistent header across all `(manager)` pages:
 - Logo + house style (navy #0F0A52 / Inter), consistent with admin so it's one app.
 
 ## 6. The shell component (the reusable frame)
+
 A `ManagerShell` (the `AdminShell` parallel) wrapping `(manager)` routes:
+
 - Server Component `(manager)/layout.tsx` keeps the auth/role gate (already there from T3a — do not
   weaken it); a Client Component holds nav state (active tab, mobile drawer/More state), mirroring
   the AdminShell split (server layout for auth, client shell for interactivity — LEARNINGS:
@@ -105,6 +117,7 @@ A `ManagerShell` (the `AdminShell` parallel) wrapping `(manager)` routes:
   (T3a) must be moved to render inside the shell too (it currently has its own bare layout).
 
 ## 7. Role behaviour at the manager surface
+
 - **ENTRY:** the target user — full manager shell, own clinic, nav adapted to clinic.
 - **ADMIN / HQ_FINANCE:** may reach `/revenue` etc. but their primary home is elsewhere
   (ADMIN → /accounts). For this task: if a non-ENTRY role lands on a manager route, the shell must
@@ -115,6 +128,7 @@ A `ManagerShell` (the `AdminShell` parallel) wrapping `(manager)` routes:
   landing to the new **Home dashboard** route, since that's now the manager's true landing.
 
 ## 8. Explicitly OUT of scope (do not build)
+
 - The wizard itself (T3b–d) — Revenue tab routes to the existing T3a list + wizard placeholder.
 - The expense form (future Phase 2 task) — Expenses tab is a stub.
 - Reports content (Phase 4) and Bank Rec content (Phase 5) — stubs with manager-scoped labels.
@@ -124,6 +138,7 @@ A `ManagerShell` (the `AdminShell` parallel) wrapping `(manager)` routes:
 - ADMIN entity-picker (deferred).
 
 ## 9. Tests / verification
+
 - Nav adaptation: CHA resolves to a nav WITHOUT Deliveries; JAL resolves WITH it. Unit-test the
   entity→capabilities→nav-items mapping.
 - Dashboard numbers are real: missing-days count matches `classifyDays` over seeded `revenue_day`
@@ -137,6 +152,7 @@ A `ManagerShell` (the `AdminShell` parallel) wrapping `(manager)` routes:
   Deliveries; mobile bottom-bar + More works; sign-out works.
 
 ## 10. Definition of done
+
 Manager logs in → lands on **Home dashboard** showing real open-loop counts (missing days, overdue
 balances) → primary nav (bottom-bar mobile / sidebar desktop) gives the six destinations, adapted
 to their clinic → Revenue is live, Deliveries shows real flagged balances (or a clean stub),
@@ -148,6 +164,7 @@ browser-verifies.
 ---
 
 ### Plan-first
+
 Return a plan before building: the shell/route structure, the entity→capabilities service-matrix
 source (and how T3b will reuse it), how you import/reuse T3a's `classifyDays` for the dashboard
 (refactor needed?), the Deliveries-tab decision (minimal list vs stub), the mobile bottom-bar +

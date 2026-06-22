@@ -302,6 +302,19 @@ statistic). Then design the operational/statistics data model, then the wizard +
   `delivery_balance.entity_id`. When this gets a REST endpoint in P2-T3, the route handler must
   enforce entity-scoped authorisation (ENTRY role may only close balances for their own entity)
   before calling the service method.
+- **Dev server writes to LIVE Supabase (P2-T3b):** `DATABASE_URL` in `apps/web/.env.local` now
+  points at the production Supabase project (`uwtzhgmyvstvkvnuhovm`). Pre-pilot this is accepted
+  to unblock development, but it violates the Guidelines' dev/prod separation. Before any real
+  clinic data lands, stand up a separate Supabase dev project (or DB branch) and repoint
+  `DATABASE_URL`. Note: `mark-closed` (T3a) had the same latent issue — the pool was silently
+  hitting the local `erp_test` DB, so mark-closed only worked via Jest, never in the browser, until
+  this session. Both routes now target the same DB as the Supabase client.
+- **Submitted-day correction flow (P2-T3b):** once a day is SUBMITTED its journal lines are
+  immutable (`block_posted_mutation`); correcting it requires `reverseEntry` (counter-entry, both
+  visible in audit) + re-entry, NOT an edit. The correction UI is NOT built. Open decision:
+  admin-initiated/approved (maker-checker, per the Phase-0 reversal-approval decision) vs
+  manager-self-service. Own task (Phase 2/3). T3b correctly gates this by refusing to open
+  SUBMITTED days in the wizard.
 
 ---
 ## Session: 2026-06-21
@@ -332,7 +345,33 @@ Branch: main
 - CONTEXT.md carried-forward gaps: fund-cash distortion, reconciliation seam, entity authz.
 - LEARNINGS.md: fund-cash distortion documented; pg date→JS Date learning.
 
-Next: P2-T3-shell — manager app shell (header + sign-out + back nav + role landing), the T8a-equivalent the manager surface skipped; THEN P2-T3b (wizard shell + day-setup).
+Next: P2-T3b — wizard shell + draft lifecycle + Step 1 day-setup (channels-active), reading capabilities from clinic_service_matrix.md / capabilities.ts.
+
+---
+## Session: 2026-06-22 (session 3)
+Branch: main
+
+**P2-T3-shell (committed)** — ManagerShell wrapping (manager) routes; mobile bottom-bar
+  (Home/Revenue/Expenses/Deliveries/More) + desktop DOING/VIEWING sidebar; header with
+  clinic name + sign-out; real Home dashboard (missing days via classifyDays, overdue
+  balances via getFlaggedOpenBalances — query-backed); six destinations with per-clinic
+  adaptation; capabilities matrix (clinic_service_matrix.md) as the single source T3b reuses;
+  Deliveries gated to csection clinics with server-side /deliveries redirect; Expenses/Reports/
+  Bank-Rec stubs; ENTRY lands on /dashboard. 34/34 web tests green.
+- ManagerShell.tsx: Client Component; mobile bottom-bar (4–5 slots + More); desktop sidebar
+  (DOING: Home/Revenue/Expenses/Deliveries[JAL/NAS only] · VIEWING: Reports/Bank-Rec);
+  identity + sign-out in sidebar footer (desktop) and More sheet (mobile).
+- capabilities.ts: getEntityCapabilities(code) + hasDeliveries(caps) — single source;
+  all five clinics have satellite (team count dynamic); Deliveries nav gated by csection flag.
+- docs/reference/clinic_service_matrix.md created: canonical per-entity service matrix,
+  satellite confirmed all-five-clinics.
+- (manager)/layout.tsx: now fetches entity name + full_name; renders ManagerShell.
+- Login dispatch + app/page.tsx: ENTRY → /dashboard (was /revenue).
+- RevenueManagementClient: min-h-full (was min-h-screen); inner overflow-auto removed
+  (single scroll at shell level).
+- capabilities.test.ts (16 tests) + dashboard.test.ts (3 integration tests).
+
+Next: P2-T3c — session screens (Morning/Evening/After-hours/Satellite). Gate: reconcile Phase2_Revenue_Mapping_v2.md §1/§3/§7 to the 2150 model before building.
 
 ---
 ## Phase 2 status
@@ -349,6 +388,11 @@ live on Supabase).
 - P2-T2b: C-section holding-account (account 2150, closeDeliveryBalance, ageing query),
   migration 0013 (committed a6be9bb, live on Supabase).
 
-**Next: P2-T3-shell** — manager app shell (header + sign-out + back nav + role landing), the T8a-equivalent the manager surface skipped; THEN P2-T3b (wizard shell + day-setup).
+- P2-T3a: Revenue Entry Management page + mark-closed zero-day (committed 38083bd).
+- P2-T3-shell: ManagerShell + nav + Home dashboard + capabilities matrix (committed 2026-06-22).
 
-*Design decision:* Manager-shell task inserted before T3b — the manager surface (T3a) was built without the persistent-shell step that the admin panel got in T8a; inserting it now keeps the plan's shell-before-pages order.
+- P2-T3b: Wizard shell + draft lifecycle + Step 1 day-setup (channels-active).
+
+**Next: P2-T3c** — session screens (Morning/Evening/After-hours/Satellite). Gate: reconcile Phase2_Revenue_Mapping_v2.md §1/§3/§7 to the 2150 model before building.
+
+*Design decisions:* Manager-shell task inserted before T3b — the manager surface (T3a) was built without the persistent-shell step that the admin panel got in T8a; inserting it now keeps the plan's shell-before-pages order. T3b uses loose partial storage for draft_data (full DraftDataSchema.parse only at submit in T3d) so mid-wizard drafts without financial data are valid DRAFT rows.

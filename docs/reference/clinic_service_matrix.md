@@ -5,7 +5,7 @@ Single source for per-entity capabilities. Consumed by:
 - `docs/tasks/wizard_design.md` — screen/step design
 - `docs/tasks/P2-T3-shell_manager_shell_nav_dashboard.md` — nav adaptation spec
 
-Last updated: 2026-06-22 (CHA confirmed; source: Sayeed)
+Last updated: 2026-06-22 (CHA confirmed; satellite confirmed all-five-clinics; source: Sayeed)
 
 ## Matrix
 
@@ -14,7 +14,7 @@ Last updated: 2026-06-22 (CHA confirmed; source: Sayeed)
 | Jalalabad  | JAL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Nasirabad  | NAS | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Amanbazar  | AMB | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| Kattali    | KAT | ✓ | ✓ | ✓ | — | ✓ | — |
+| Kattali    | KAT | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | Chandgaon  | CHA | ✓ | — | — | ✓ | — | — |
 
 ## Notes
@@ -29,9 +29,10 @@ concern (the `sessions.MORNING` key is correct for all entities).
 NVD (AMB/KAT) produces no `delivery_balance` rows (same-day income, no advance held), so
 the Deliveries surface would be structurally empty for AMB/KAT — hidden from their nav.
 
-**AMB satellite (unconfirmed detail):** AMB satellite=true is a provisional assumption;
-KAT satellite=false. Satellite does not affect nav items (T3-shell scope) — it affects
-wizard step count (T3b scope). Confirm before T3b build if AMB satellite is material.
+**Satellite — confirmed all five clinics:** Satellite runs at all five clinics; team count
+is dynamic (set per-day in wizard Step 1), not a capability flag. The `satellite` field in
+capabilities.ts is therefore `true` for all entities and may be simplified or removed when
+T3b is built, since it never gates anything.
 
 **Pilot entity:** JAL (Jalalabad) is the most complex — all capabilities. All others are
 subsets. Build and test against JAL; verify subsets by capability flags, not entity-specific code.
