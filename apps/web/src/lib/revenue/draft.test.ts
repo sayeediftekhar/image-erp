@@ -128,4 +128,88 @@ describe('saveDraftDay (integration)', () => {
     )
     expect(after[0].n).toBe(before[0].n)
   })
+
+  it('T3c session data — no journal_entries or daily_activity rows created (Law 2 guard)', async () => {
+    const { rows: jeBefore } = await pool.query<{ n: string }>(
+      'SELECT COUNT(*) AS n FROM public.journal_entries',
+    )
+    // Check whether daily_activity exists in this DB (it's created at T3d/submit time).
+    const { rows: tableCheck } = await pool.query<{ exists: boolean }>(
+      `SELECT EXISTS(
+         SELECT FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'daily_activity'
+       ) AS exists`,
+    )
+    let daBefore: string | null = null
+    if (tableCheck[0].exists) {
+      const { rows } = await pool.query<{ n: string }>('SELECT COUNT(*) AS n FROM public.daily_activity')
+      daBefore = rows[0].n
+    }
+
+    // Save a realistic T3c draft: morning session + satellite team + USG
+    await saveDraftDay(pool, actorId, jalId, TEST_DATE, {
+      revenue_date: TEST_DATE, entity_code: 'JAL',
+      channels_active: ['MORNING', 'SATELLITE'],
+      sessions: {
+        MORNING: {
+          patients_new: 8, patients_old: 4, services: 12,
+          service_charge: 1500, rdf_medicine_sales: 300,
+          lab_tests: 4, lab_revenue: 500,
+          usg: [{ type: 'PP', count: 2, revenue: 400 }],
+        },
+      },
+      satellite_teams: [{
+        team: 'TEAM_1', patients_new: 5, patients_old: 2, services: 7,
+        service_charge: 800, rdf_medicine_sales: 150, lab_tests: 1, lab_revenue: 200, usg: [],
+      }],
+    })
+
+    const { rows: jeAfter } = await pool.query<{ n: string }>(
+      'SELECT COUNT(*) AS n FROM public.journal_entries',
+    )
+    expect(jeAfter[0].n).toBe(jeBefore[0].n)
+
+    if (tableCheck[0].exists && daBefore !== null) {
+      const { rows: daAfter } = await pool.query<{ n: string }>('SELECT COUNT(*) AS n FROM public.daily_activity')
+      expect(daAfter[0].n).toBe(daBefore)
+    }
+  })
+
+  it('deselecting a channel preserves its session slice — channels_active is authoritative for T3d', async () => {
+    // First save: MORNING + SATELLITE both selected, MORNING session data included.
+    const firstDraft = {
+      revenue_date: TEST_DATE, entity_code: 'JAL',
+      channels_active: ['MORNING', 'SATELLITE'],
+      sessions: {
+        MORNING: {
+          patients_new: 5, patients_old: 3, services: 8,
+          service_charge: 1000, rdf_medicine_sales: 200, lab_tests: 2, lab_revenue: 300,
+          usg: [],
+        },
+      },
+      satellite_teams: [{
+        team: 'TEAM_1', patients_new: 0, patients_old: 0, services: 0,
+        service_charge: 0, rdf_medicine_sales: 0, lab_tests: 0, lab_revenue: 0, usg: [],
+      }],
+    }
+    await saveDraftDay(pool, actorId, jalId, TEST_DATE, firstDraft)
+
+    // Re-save Step 1: MORNING deselected, but sessions.MORNING preserved via spread.
+    // This mirrors WizardClient's handleSaveStep1 spreading draftData.
+    const resaveDraft = {
+      ...firstDraft,
+      channels_active: ['SATELLITE'],  // MORNING removed
+    }
+    const { revenueDayId } = await saveDraftDay(pool, actorId, jalId, TEST_DATE, resaveDraft)
+
+    const { rows } = await pool.query<{ draft_data: Record<string, unknown> }>(
+      'SELECT draft_data FROM public.revenue_day WHERE id = $1',
+      [revenueDayId],
+    )
+    const data = rows[0].draft_data
+    expect(data.channels_active).not.toContain('MORNING')           // authoritative: excluded
+    const sessions = data.sessions as Record<string, unknown>
+    expect(sessions?.MORNING).toBeDefined()                          // slice preserved, not cleared
+    expect((sessions?.MORNING as Record<string, unknown>)?.patients_new).toBe(5)
+  })
 })

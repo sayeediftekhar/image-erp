@@ -309,6 +309,12 @@ statistic). Then design the operational/statistics data model, then the wizard +
   `DATABASE_URL`. Note: `mark-closed` (T3a) had the same latent issue — the pool was silently
   hitting the local `erp_test` DB, so mark-closed only worked via Jest, never in the browser, until
   this session. Both routes now target the same DB as the Supabase client.
+- **channels_active is authoritative for T3d posting (P2-T3c):** The wizard preserves
+  sessions.* slices for deselected channels (a fat-finger toggle must not destroy entered data).
+  T3d's submitRevenueDay MUST post income and write daily_activity ONLY for channels present in
+  channels_active; any lingering sessions.* slice whose channel was deselected must be ignored.
+  Tested: integration test confirms deselecting MORNING leaves sessions.MORNING in draft_data
+  while channels_active excludes it. T3d must filter by channels_active, not by sessions keys.
 - **Submitted-day correction flow (P2-T3b):** once a day is SUBMITTED its journal lines are
   immutable (`block_posted_mutation`); correcting it requires `reverseEntry` (counter-entry, both
   visible in audit) + re-entry, NOT an edit. The correction UI is NOT built. Open decision:

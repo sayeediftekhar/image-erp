@@ -96,6 +96,9 @@ const FinancialSchema = z.object({
   reconciliation_notes:  z.string().nullable().default(null),
 });
 
+// Sub-schema exports for regression tests (no-C-section-income guard + shape checks).
+export { UsgEntrySchema, OutdoorSessionSchema, AfterhoursSessionSchema, SatelliteTeamSchema, CsectionSchema };
+
 // ── Root schema ───────────────────────────────────────────────────────────────
 
 export const DraftDataSchema = z.object({
