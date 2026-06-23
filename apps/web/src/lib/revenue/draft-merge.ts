@@ -74,5 +74,11 @@ export function mergeSliceIntoDraft(
     teams[teamIndex] = slice
     return { ...current, satellite_teams: teams }
   }
+  if (stepId === 'DELIVERY') {
+    return { ...current, delivery: slice }
+  }
+  if (stepId === 'FINANCIAL') {
+    return { ...current, financial: slice }
+  }
   return current
 }

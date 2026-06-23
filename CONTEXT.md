@@ -402,3 +402,42 @@ live on Supabase).
 **Next: P2-T3c** — session screens (Morning/Evening/After-hours/Satellite). Gate: reconcile Phase2_Revenue_Mapping_v2.md §1/§3/§7 to the 2150 model before building.
 
 *Design decisions:* Manager-shell task inserted before T3b — the manager surface (T3a) was built without the persistent-shell step that the admin panel got in T8a; inserting it now keeps the plan's shell-before-pages order. T3b uses loose partial storage for draft_data (full DraftDataSchema.parse only at submit in T3d) so mid-wizard drafts without financial data are valid DRAFT rows.
+
+---
+## Session: 2026-06-23
+Branch: main
+
+**P2-T3c (committed 60edc6d)** — morning/evening/satellite/afterhours/USG session screens.
+  OutdoorSession (channel prop → 4010 vs 4040), AfterhoursSession, UsgSection. 70/70 web + 67/67 API green.
+
+**P2-T3d (pending browser-verify)** — Delivery step (NVD + C-section advance), Financial wrap-up
+  with live reconciliation, Review & Submit step, and the submit-day route that calls the frozen engine.
+
+Key additions:
+- `reconciliation.ts` — `computeDraftFundSplit` (paisa-integer rounding matching engine's `buildIncomeInput`),
+  `computeDraftIncome`, `computeAdvancesReceived`, `computeReconciliation`. 14-test suite.
+- `strip-inactive.ts` — `stripInactiveChannels` applied in `handleSubmit` before final save-draft; enforces
+  channels_active contract (T3c deferred this). 8-test suite.
+- `DeliveryStep.tsx`, `FinancialStep.tsx`, `ReviewStep.tsx` — last three wizard steps.
+- `submit-day` route — server-side auth + ENTRY entity isolation + 409 on re-submit; calls `submitRevenueDay`.
+- `/revenue/day/[date]` — read-only ReviewStep for SUBMITTED days; carry-forward openingCash.
+- `RevenueManagementClient` — ENTERED rows now show "View →" link to `/revenue/day/{date}`.
+- `wizard/page.tsx` — SUBMITTED redirect to `/revenue/day/{date}`; openingCash carry-forward query.
+- 99/99 web tests, 67/67 API tests green.
+
+**Known limitations logged (do NOT solve in T3d):**
+- **Out-of-order batch entry accuracy:** managers commonly enter days 2–3 days late in one sitting.
+  The carry-forward opening_cash uses the most-recent SUBMITTED day's cash_in_hand_counted. If days are
+  submitted out-of-order (e.g. day 5 before day 4), the carry-forward will be wrong for day 5 until day 4
+  is submitted. No automated correction; the reconciliation delta will flag the discrepancy. Address in a
+  later task that either sorts by revenue_date or shows a warning when a gap exists before this day.
+- **First-day-ever opening_cash defaults to 0:** if no prior SUBMITTED day exists for this entity, the
+  carry-forward query returns null and openingCash = 0. This is correct for the very first day of a new
+  clinic, but managers must be aware the system cannot know the actual cash on hand before the ERP went live.
+  Consider a one-time "seed opening balance" admin entry for each entity at go-live.
+
+**Carried-forward gaps (new, from T3d):**
+- **channels_active T3c contract enforced in T3d via strip-inactive.ts:** prior gap is now RESOLVED.
+  `stripInactiveChannels` is called in `handleSubmit` before the final save-draft; engine reads stripped data.
+- **C-section UI labels "advance / deposit held" throughout** (never "income" or "earnings") — correct per
+  the 2150 holding-account model. Any future UI touching C-section must maintain this convention.

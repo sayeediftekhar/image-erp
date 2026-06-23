@@ -46,10 +46,9 @@ export default function UsgSection({ value, onChange }: Props) {
         <div key={entry.type} className="flex items-center gap-2">
           <span className="text-sm text-gray-700 w-28 shrink-0">{USG_LABELS[entry.type]}</span>
           <input
-            type="number"
+            type="text"
             inputMode="numeric"
-            min={0}
-            value={entry.count || ''}
+            value={entry.count > 0 ? String(entry.count) : ''}
             onChange={e => updateEntry(i, 'count', e.target.value)}
             placeholder="0"
             aria-label={`${USG_LABELS[entry.type]} count`}
@@ -57,10 +56,9 @@ export default function UsgSection({ value, onChange }: Props) {
           />
           <span className="text-gray-400 text-sm shrink-0">Tk</span>
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
-            min={0}
-            value={entry.revenue || ''}
+            value={entry.revenue > 0 ? String(entry.revenue) : ''}
             onChange={e => updateEntry(i, 'revenue', e.target.value)}
             placeholder="0"
             aria-label={`${USG_LABELS[entry.type]} revenue`}

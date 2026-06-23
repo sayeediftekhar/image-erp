@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { filterUsgEntries, type UsgEntry } from '@/lib/revenue/draft-merge'
+import { strToMoney, strToInt, moneyToStr } from '@/lib/revenue/money-input'
+import { stepKeyDown } from './step-key-down'
 import UsgSection from './UsgSection'
 
 interface OutdoorSessionData {
@@ -40,16 +42,11 @@ function parseInitialData(raw: unknown): OutdoorSessionData {
   }
 }
 
-function numVal(raw: string, integer: boolean): number {
-  const v = integer ? parseInt(raw || '0', 10) : parseFloat(raw || '0')
-  return isNaN(v) || v < 0 ? 0 : v
-}
-
 interface Props {
   channel:     'MORNING' | 'EVENING' | 'SATELLITE'
   label:       string
   initialData: unknown
-  teamToken?:  string   // 'TEAM_1', 'TEAM_2' etc. — SATELLITE only; preserved in saved slice
+  teamToken?:  string
   onSave:      (slice: unknown) => Promise<void>
   isSaving:    boolean
   saveError:   string | null
@@ -60,13 +57,14 @@ export default function OutdoorSession({
 }: Props) {
   const init = parseInitialData(initialData)
 
-  const [patientsNew,      setPatientsNew]      = useState(init.patients_new)
-  const [patientsOld,      setPatientsOld]      = useState(init.patients_old)
-  const [services,         setServices]         = useState(init.services)
-  const [serviceCharge,    setServiceCharge]    = useState(init.service_charge)
-  const [rdfMedicineSales, setRdfMedicineSales] = useState(init.rdf_medicine_sales)
-  const [labTests,         setLabTests]         = useState(init.lab_tests)
-  const [labRevenue,       setLabRevenue]       = useState(init.lab_revenue)
+  // String state — values are exactly what the user typed; converted to number at save only.
+  const [patientsNew,      setPatientsNew]      = useState(() => moneyToStr(init.patients_new))
+  const [patientsOld,      setPatientsOld]      = useState(() => moneyToStr(init.patients_old))
+  const [services,         setServices]         = useState(() => moneyToStr(init.services))
+  const [serviceCharge,    setServiceCharge]    = useState(() => moneyToStr(init.service_charge))
+  const [rdfMedicineSales, setRdfMedicineSales] = useState(() => moneyToStr(init.rdf_medicine_sales))
+  const [labTests,         setLabTests]         = useState(() => moneyToStr(init.lab_tests))
+  const [labRevenue,       setLabRevenue]       = useState(() => moneyToStr(init.lab_revenue))
   const [usgEntries,       setUsgEntries]       = useState<UsgEntry[]>(init.usg)
 
   const isSatellite = channel === 'SATELLITE'
@@ -74,13 +72,13 @@ export default function OutdoorSession({
 
   async function handleSave() {
     const base = {
-      patients_new:       patientsNew,
-      patients_old:       patientsOld,
-      services,
-      service_charge:     serviceCharge,
-      rdf_medicine_sales: rdfMedicineSales,
-      lab_tests:          labTests,
-      lab_revenue:        labRevenue,
+      patients_new:       strToInt(patientsNew),
+      patients_old:       strToInt(patientsOld),
+      services:           strToInt(services),
+      service_charge:     strToMoney(serviceCharge),
+      rdf_medicine_sales: strToMoney(rdfMedicineSales),
+      lab_tests:          strToInt(labTests),
+      lab_revenue:        strToMoney(labRevenue),
       usg:                filterUsgEntries(usgEntries),
     }
     await onSave(isSatellite && teamToken ? { team: teamToken, ...base } : base)
@@ -89,7 +87,7 @@ export default function OutdoorSession({
   const inputClass = 'w-full min-h-[44px] rounded-xl border border-gray-300 px-4 text-base bg-white'
 
   return (
-    <div className="p-5 space-y-6">
+    <div className="p-5 space-y-6" data-wizard-step onKeyDown={stepKeyDown}>
       <h2 className="text-gray-900 text-lg font-bold">{label}</h2>
 
       {/* Patients & services */}
@@ -98,27 +96,27 @@ export default function OutdoorSession({
 
         <div className="space-y-1">
           <label className="text-sm font-medium text-gray-700">New patients</label>
-          <input type="number" inputMode="numeric" min={0} placeholder="0"
-            value={patientsNew || ''}
-            onChange={e => setPatientsNew(numVal(e.target.value, true))}
+          <input type="text" inputMode="numeric" placeholder="0"
+            value={patientsNew}
+            onChange={e => setPatientsNew(e.target.value)}
             className={inputClass}
           />
         </div>
 
         <div className="space-y-1">
           <label className="text-sm font-medium text-gray-700">Old patients</label>
-          <input type="number" inputMode="numeric" min={0} placeholder="0"
-            value={patientsOld || ''}
-            onChange={e => setPatientsOld(numVal(e.target.value, true))}
+          <input type="text" inputMode="numeric" placeholder="0"
+            value={patientsOld}
+            onChange={e => setPatientsOld(e.target.value)}
             className={inputClass}
           />
         </div>
 
         <div className="space-y-1">
           <label className="text-sm font-medium text-gray-700">Total services</label>
-          <input type="number" inputMode="numeric" min={0} placeholder="0"
-            value={services || ''}
-            onChange={e => setServices(numVal(e.target.value, true))}
+          <input type="text" inputMode="numeric" placeholder="0"
+            value={services}
+            onChange={e => setServices(e.target.value)}
             className={inputClass}
           />
         </div>
@@ -131,10 +129,10 @@ export default function OutdoorSession({
           <span className="text-white/50 font-normal text-xs">{serviceChargeHint}</span>
         </label>
         <input
-          type="number" inputMode="decimal" min={0} placeholder="0"
+          type="text" inputMode="decimal" placeholder="0"
           aria-label="Service charge"
-          value={serviceCharge || ''}
-          onChange={e => setServiceCharge(numVal(e.target.value, false))}
+          value={serviceCharge}
+          onChange={e => setServiceCharge(e.target.value)}
           className="w-full min-h-[44px] rounded-xl bg-white/10 border border-white/20 px-4 text-white text-lg font-bold placeholder-white/30"
         />
       </div>
@@ -149,18 +147,18 @@ export default function OutdoorSession({
           <label className="text-sm font-medium text-gray-700">
             RDF medicine sales (Tk) <span className="text-xs text-gray-400 font-normal">→ 4110</span>
           </label>
-          <input type="number" inputMode="decimal" min={0} placeholder="0"
-            value={rdfMedicineSales || ''}
-            onChange={e => setRdfMedicineSales(numVal(e.target.value, false))}
+          <input type="text" inputMode="decimal" placeholder="0"
+            value={rdfMedicineSales}
+            onChange={e => setRdfMedicineSales(e.target.value)}
             className={inputClass}
           />
         </div>
 
         <div className="space-y-1">
           <label className="text-sm font-medium text-gray-700"># Lab tests</label>
-          <input type="number" inputMode="numeric" min={0} placeholder="0"
-            value={labTests || ''}
-            onChange={e => setLabTests(numVal(e.target.value, true))}
+          <input type="text" inputMode="numeric" placeholder="0"
+            value={labTests}
+            onChange={e => setLabTests(e.target.value)}
             className={inputClass}
           />
         </div>
@@ -169,9 +167,9 @@ export default function OutdoorSession({
           <label className="text-sm font-medium text-gray-700">
             Lab revenue (Tk) <span className="text-xs text-gray-400 font-normal">→ 4120</span>
           </label>
-          <input type="number" inputMode="decimal" min={0} placeholder="0"
-            value={labRevenue || ''}
-            onChange={e => setLabRevenue(numVal(e.target.value, false))}
+          <input type="text" inputMode="decimal" placeholder="0"
+            value={labRevenue}
+            onChange={e => setLabRevenue(e.target.value)}
             className={inputClass}
           />
         </div>

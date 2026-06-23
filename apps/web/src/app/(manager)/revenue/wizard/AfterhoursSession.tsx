@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { strToMoney, strToInt, moneyToStr } from '@/lib/revenue/money-input'
+import { stepKeyDown } from './step-key-down'
 
 interface AfterhoursData {
   patients:           number
@@ -22,11 +24,6 @@ function parseInitialData(raw: unknown): AfterhoursData {
   return { patients: 0, service_charge: 0, rdf_medicine_sales: 0, logistic_sales: 0 }
 }
 
-function numVal(raw: string, integer: boolean): number {
-  const v = integer ? parseInt(raw || '0', 10) : parseFloat(raw || '0')
-  return isNaN(v) || v < 0 ? 0 : v
-}
-
 interface Props {
   initialData: unknown
   onSave:      (slice: unknown) => Promise<void>
@@ -37,24 +34,25 @@ interface Props {
 export default function AfterhoursSession({ initialData, onSave, isSaving, saveError }: Props) {
   const init = parseInitialData(initialData)
 
-  const [patients,         setPatients]         = useState(init.patients)
-  const [serviceCharge,    setServiceCharge]    = useState(init.service_charge)
-  const [rdfMedicineSales, setRdfMedicineSales] = useState(init.rdf_medicine_sales)
-  const [logisticSales,    setLogisticSales]    = useState(init.logistic_sales)
+  // String state — values are exactly what the user typed; converted to number at save only.
+  const [patients,         setPatients]         = useState(() => moneyToStr(init.patients))
+  const [serviceCharge,    setServiceCharge]    = useState(() => moneyToStr(init.service_charge))
+  const [rdfMedicineSales, setRdfMedicineSales] = useState(() => moneyToStr(init.rdf_medicine_sales))
+  const [logisticSales,    setLogisticSales]    = useState(() => moneyToStr(init.logistic_sales))
 
   async function handleSave() {
     await onSave({
-      patients,
-      service_charge:     serviceCharge,
-      rdf_medicine_sales: rdfMedicineSales,
-      logistic_sales:     logisticSales,
+      patients:           strToInt(patients),
+      service_charge:     strToMoney(serviceCharge),
+      rdf_medicine_sales: strToMoney(rdfMedicineSales),
+      logistic_sales:     strToMoney(logisticSales),
     })
   }
 
   const inputClass = 'w-full min-h-[44px] rounded-xl border border-gray-300 px-4 text-base bg-white'
 
   return (
-    <div className="p-5 space-y-6">
+    <div className="p-5 space-y-6" data-wizard-step onKeyDown={stepKeyDown}>
       <h2 className="text-gray-900 text-lg font-bold">After-hours</h2>
 
       {/* Customers */}
@@ -62,9 +60,9 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Customers</p>
         <div className="space-y-1">
           <label className="text-sm font-medium text-gray-700"># Customers</label>
-          <input type="number" inputMode="numeric" min={0} placeholder="0"
-            value={patients || ''}
-            onChange={e => setPatients(numVal(e.target.value, true))}
+          <input type="text" inputMode="numeric" placeholder="0"
+            value={patients}
+            onChange={e => setPatients(e.target.value)}
             className={inputClass}
           />
         </div>
@@ -77,10 +75,10 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
           <span className="text-white/50 font-normal text-xs">→ 4010 PI-Outdoor</span>
         </label>
         <input
-          type="number" inputMode="decimal" min={0} placeholder="0"
+          type="text" inputMode="decimal" placeholder="0"
           aria-label="Service charge"
-          value={serviceCharge || ''}
-          onChange={e => setServiceCharge(numVal(e.target.value, false))}
+          value={serviceCharge}
+          onChange={e => setServiceCharge(e.target.value)}
           className="w-full min-h-[44px] rounded-xl bg-white/10 border border-white/20 px-4 text-white text-lg font-bold placeholder-white/30"
         />
       </div>
@@ -93,9 +91,9 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
           <label className="text-sm font-medium text-gray-700">
             RDF medicine sales (Tk) <span className="text-xs text-gray-400 font-normal">→ 4110</span>
           </label>
-          <input type="number" inputMode="decimal" min={0} placeholder="0"
-            value={rdfMedicineSales || ''}
-            onChange={e => setRdfMedicineSales(numVal(e.target.value, false))}
+          <input type="text" inputMode="decimal" placeholder="0"
+            value={rdfMedicineSales}
+            onChange={e => setRdfMedicineSales(e.target.value)}
             className={inputClass}
           />
         </div>
@@ -104,9 +102,9 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
           <label className="text-sm font-medium text-gray-700">
             Logistic sales (Tk) <span className="text-xs text-gray-400 font-normal">→ 4130</span>
           </label>
-          <input type="number" inputMode="decimal" min={0} placeholder="0"
-            value={logisticSales || ''}
-            onChange={e => setLogisticSales(numVal(e.target.value, false))}
+          <input type="text" inputMode="decimal" placeholder="0"
+            value={logisticSales}
+            onChange={e => setLogisticSales(e.target.value)}
             className={inputClass}
           />
         </div>

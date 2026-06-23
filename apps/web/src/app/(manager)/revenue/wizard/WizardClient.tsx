@@ -5,37 +5,43 @@ import { useRouter } from 'next/navigation'
 import type { EntityCapabilities } from '@/lib/capabilities'
 import type { Channel } from '@/lib/revenue/channels'
 import { mergeSliceIntoDraft, mergeTeamStubs } from '@/lib/revenue/draft-merge'
+import { stripInactiveChannels } from '@/lib/revenue/strip-inactive'
 import Step1DaySetup from './Step1DaySetup'
-import StepPlaceholder from './StepPlaceholder'
 import OutdoorSession from './OutdoorSession'
 import AfterhoursSession from './AfterhoursSession'
+import DeliveryStep from './DeliveryStep'
+import FinancialStep from './FinancialStep'
+import ReviewStep from './ReviewStep'
 
 interface StepDescriptor {
   id:            string
   label:         string
-  isPlaceholder: boolean
   phase?:        'T3c' | 'T3d'
 }
 
-function buildSteps(savedChannels: Channel[], savedTeamCount: number): StepDescriptor[] {
+function buildSteps(
+  savedChannels: Channel[],
+  savedTeamCount: number,
+  caps: EntityCapabilities,
+): StepDescriptor[] {
   const steps: StepDescriptor[] = [
-    { id: 'DAY_SETUP', label: 'Day setup', isPlaceholder: false },
+    { id: 'DAY_SETUP', label: 'Day setup' },
   ]
   if (savedChannels.includes('MORNING'))
-    steps.push({ id: 'MORNING',    label: 'Morning clinic',   isPlaceholder: false, phase: 'T3c' })
+    steps.push({ id: 'MORNING',    label: 'Morning clinic',   phase: 'T3c' })
   if (savedChannels.includes('EVENING'))
-    steps.push({ id: 'EVENING',    label: 'Evening clinic',   isPlaceholder: false, phase: 'T3c' })
+    steps.push({ id: 'EVENING',    label: 'Evening clinic',   phase: 'T3c' })
   if (savedChannels.includes('AFTERHOURS'))
-    steps.push({ id: 'AFTERHOURS', label: 'After-hours',      isPlaceholder: false, phase: 'T3c' })
+    steps.push({ id: 'AFTERHOURS', label: 'After-hours',      phase: 'T3c' })
   if (savedChannels.includes('SATELLITE')) {
     for (let i = 1; i <= savedTeamCount; i++) {
-      steps.push({ id: `SATELLITE_TEAM_${i}`, label: `Satellite — Team ${i}`, isPlaceholder: false, phase: 'T3c' })
+      steps.push({ id: `SATELLITE_TEAM_${i}`, label: `Satellite — Team ${i}`, phase: 'T3c' })
     }
   }
-  if (savedChannels.includes('DELIVERY'))
-    steps.push({ id: 'DELIVERY',   label: 'Deliveries',       isPlaceholder: true, phase: 'T3d' })
-  steps.push({ id: 'FINANCIAL', label: 'Financial wrap-up', isPlaceholder: true, phase: 'T3d' })
-  steps.push({ id: 'REVIEW',    label: 'Review & submit',   isPlaceholder: true, phase: 'T3d' })
+  if (savedChannels.includes('DELIVERY') && (caps.delivery.nvd || caps.delivery.csection))
+    steps.push({ id: 'DELIVERY',   label: 'Deliveries',       phase: 'T3d' })
+  steps.push({ id: 'FINANCIAL', label: 'Financial wrap-up', phase: 'T3d' })
+  steps.push({ id: 'REVIEW',    label: 'Review & submit',   phase: 'T3d' })
   return steps
 }
 
@@ -74,6 +80,14 @@ function getSatelliteData(draftData: Record<string, unknown>, teamIndex: number)
   return teams?.[teamIndex] ?? null
 }
 
+function getDeliveryData(draftData: Record<string, unknown>): unknown {
+  return draftData.delivery ?? null
+}
+
+function getFinancialData(draftData: Record<string, unknown>): unknown {
+  return draftData.financial ?? null
+}
+
 export interface WizardClientProps {
   date:             string
   entityCode:       string
@@ -81,6 +95,7 @@ export interface WizardClientProps {
   caps:             EntityCapabilities
   initialDraft:     unknown
   revenueDayId:     string | null
+  openingCash:      number
 }
 
 export default function WizardClient({
@@ -90,24 +105,19 @@ export default function WizardClient({
   caps,
   initialDraft,
   revenueDayId: initialRevenueDayId,
+  openingCash,
 }: WizardClientProps) {
   const router = useRouter()
 
-  // Stable "last saved" state — only changes after a successful Save & Continue.
-  // Steps array is derived from this, so step count is stable while toggles change.
   const [savedChannels,  setSavedChannels]  = useState<Channel[]>(() => parseSavedChannels(initialDraft))
   const [savedTeamCount, setSavedTeamCount] = useState<number>(() => parseSavedTeamCount(initialDraft))
 
-  // Live toggle state — changes as manager toggles; committed to DB on Save.
   const [activeChannels, setActiveChannels] = useState<Set<Channel>>(
     () => new Set(parseSavedChannels(initialDraft)),
   )
   const [teamCount, setTeamCount] = useState<number>(() => parseSavedTeamCount(initialDraft))
 
-  // Full accumulated draft — merged on every successful step save. Initialized
-  // from server-fetched initialDraft so resume rehydrates all session components.
-  // channels_active is authoritative for T3d; sessions.* for deselected channels
-  // are preserved here (not cleared) so a fat-finger toggle doesn't destroy data.
+  // Full accumulated draft — merged on every successful step save.
   const [draftData, setDraftData] = useState<Record<string, unknown>>(
     () => (initialDraft ?? {}) as Record<string, unknown>,
   )
@@ -117,10 +127,9 @@ export default function WizardClient({
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Recomputed only when a Save succeeds — not on every toggle change.
   const steps = useMemo(
-    () => buildSteps(savedChannels, savedTeamCount),
-    [savedChannels, savedTeamCount],
+    () => buildSteps(savedChannels, savedTeamCount, caps),
+    [savedChannels, savedTeamCount, caps],
   )
   const currentStep = steps[currentStepIndex]
   const isFirst = currentStepIndex === 0
@@ -141,10 +150,6 @@ export default function WizardClient({
     setIsSaving(true)
 
     const channelsArray = Array.from(activeChannels)
-
-    // Preserve existing team data; only append/truncate for count changes.
-    // Growing 2→3: TEAM_1+TEAM_2 kept, TEAM_3 gets an empty stub.
-    // Shrinking 3→2: TEAM_3 dropped; TEAM_1+TEAM_2 preserved.
     const existingTeams = Array.isArray(draftData.satellite_teams)
       ? draftData.satellite_teams as unknown[]
       : []
@@ -152,8 +157,6 @@ export default function WizardClient({
       ? mergeTeamStubs(existingTeams, teamCount)
       : []
 
-    // Spread draftData so deselected-channel session slices are preserved.
-    // channels_active is the authority for T3d posting; lingering slices are harmless.
     const partialDraft: Record<string, unknown> = {
       ...draftData,
       revenue_date:    date,
@@ -219,8 +222,51 @@ export default function WizardClient({
     }
   }
 
-  // revenueDayId is maintained here for T3d to reference during submitRevenueDay.
-  void revenueDayId
+  async function handleSubmit() {
+    if (isSaving || !revenueDayId) return
+    setSaveError(null)
+    setIsSaving(true)
+
+    try {
+      // Strip deselected channel slices BEFORE the final save.
+      // The engine reads draft_data from DB; a lingering deselected slice would post.
+      const strippedDraft = stripInactiveChannels(draftData)
+
+      // Final save-draft with the stripped data
+      const saveRes = await fetch('/api/manager/save-draft', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ date, partialDraft: strippedDraft }),
+      })
+      if (!saveRes.ok) {
+        const err = await saveRes.json().catch(() => ({})) as { error?: string }
+        setSaveError(err.error ?? 'Failed to save before submit — please try again')
+        return
+      }
+
+      // Submit: engine reads the stripped draft from DB and posts to ledger
+      const submitRes = await fetch('/api/manager/submit-day', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ revenueDayId }),
+      })
+      if (!submitRes.ok) {
+        const err = await submitRes.json().catch(() => ({})) as { error?: string; code?: string }
+        if (err.code === 'ALREADY_SUBMITTED') {
+          setSaveError('This day is already submitted.')
+        } else {
+          setSaveError(err.error ?? 'Submit failed — please try again')
+        }
+        return
+      }
+
+      router.push('/revenue')
+    } catch {
+      setSaveError('Network error — check your connection and try again')
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   function renderStepContent() {
     if (currentStep.id === 'DAY_SETUP') {
@@ -297,7 +343,51 @@ export default function WizardClient({
       )
     }
 
-    return <StepPlaceholder label={currentStep.label} phase={currentStep.phase ?? 'T3d'} />
+    if (currentStep.id === 'DELIVERY') {
+      return (
+        <DeliveryStep
+          key="DELIVERY"
+          caps={caps}
+          initialData={getDeliveryData(draftData)}
+          onSave={slice => handleSaveSessionStep('DELIVERY', slice)}
+          isSaving={isSaving}
+          saveError={saveError}
+        />
+      )
+    }
+
+    if (currentStep.id === 'FINANCIAL') {
+      return (
+        <FinancialStep
+          key="FINANCIAL"
+          draftData={draftData}
+          openingCash={openingCash}
+          initialData={getFinancialData(draftData)}
+          onSave={slice => handleSaveSessionStep('FINANCIAL', slice)}
+          isSaving={isSaving}
+          saveError={saveError}
+        />
+      )
+    }
+
+    if (currentStep.id === 'REVIEW') {
+      return (
+        <ReviewStep
+          key="REVIEW"
+          draftData={draftData}
+          openingCash={openingCash}
+          date={date}
+          entityName={entityName}
+          readOnly={false}
+          onSubmit={handleSubmit}
+          onBack={() => setCurrentStepIndex(i => i - 1)}
+          isSaving={isSaving}
+          saveError={saveError}
+        />
+      )
+    }
+
+    return null
   }
 
   return (
@@ -336,50 +426,33 @@ export default function WizardClient({
         {renderStepContent()}
       </div>
 
-      {/* Footer navigation */}
-      <div className="bg-white border-t border-gray-200 px-4 py-3 flex gap-3 shrink-0">
-        {!isFirst && (
+      {/* Footer navigation — only for DAY_SETUP and REVIEW's back button */}
+      {(isFirst || currentStep.id === 'REVIEW') && (
+        <div className="bg-white border-t border-gray-200 px-4 py-3 flex gap-3 shrink-0">
+          {isFirst && (
+            <button
+              onClick={handleSaveStep1}
+              disabled={activeChannels.size === 0 || isSaving}
+              className="flex-1 min-h-[44px] rounded-xl font-semibold text-sm text-white disabled:opacity-40 transition-opacity"
+              style={{ background: '#13007D' }}
+            >
+              {isSaving ? 'Saving…' : 'Save & Continue →'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Back button for non-first, non-review steps that handle their own save */}
+      {!isFirst && currentStep.id !== 'REVIEW' && (
+        <div className="bg-white border-t border-gray-200 px-4 py-3 flex gap-3 shrink-0">
           <button
             onClick={() => setCurrentStepIndex(i => i - 1)}
-            className="flex-1 min-h-[44px] rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm"
+            className="min-h-[44px] rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm px-5"
           >
             ← Back
           </button>
-        )}
-
-        {isFirst && (
-          <button
-            onClick={handleSaveStep1}
-            disabled={activeChannels.size === 0 || isSaving}
-            className="flex-1 min-h-[44px] rounded-xl font-semibold text-sm text-white disabled:opacity-40 transition-opacity"
-            style={{ background: '#13007D' }}
-          >
-            {isSaving ? 'Saving…' : 'Save & Continue →'}
-          </button>
-        )}
-
-        {/* T3c session steps: Save & Continue is inside the session component itself. */}
-
-        {!isFirst && currentStep.phase === 'T3d' && !isLast && (
-          <button
-            onClick={() => setCurrentStepIndex(i => i + 1)}
-            className="flex-1 min-h-[44px] rounded-xl font-semibold text-sm text-white"
-            style={{ background: '#13007D' }}
-          >
-            Next →
-          </button>
-        )}
-
-        {isLast && (
-          <button
-            disabled
-            className="flex-1 min-h-[44px] rounded-xl font-semibold text-sm text-white opacity-40 cursor-not-allowed"
-            style={{ background: '#13007D' }}
-          >
-            Submit — coming in T3d
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

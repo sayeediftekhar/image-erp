@@ -50,9 +50,28 @@ describe('mergeSliceIntoDraft', () => {
     expect(teams[1]).toEqual(slice2)
   })
 
-  it('unknown step ID (e.g. DELIVERY): returns original object unchanged', () => {
-    const slice = { nvd: { cases: 1 } }
+  it('DELIVERY: merges into delivery key', () => {
+    const slice = { nvd: { cases: 1, service_charge: 400, rdf_revenue: 0, logistic_revenue: 0 } }
     const result = mergeSliceIntoDraft(BASE, 'DELIVERY', slice)
+    expect(result.delivery).toEqual(slice)
+    expect(result.channels_active).toEqual(['MORNING', 'EVENING']) // other keys preserved
+  })
+
+  it('FINANCIAL: merges into financial key', () => {
+    const slice = {
+      bank_deposit: { made: false, pi_amount: 0, rdf_amount: 0 },
+      cash_advance: { amount: 0, fund: null, description: null },
+      cash_in_hand_counted: 5000,
+      reconciliation_notes: null,
+    }
+    const result = mergeSliceIntoDraft(BASE, 'FINANCIAL', slice)
+    expect(result.financial).toEqual(slice)
+    expect(result.revenue_date).toBe('2025-01-15') // other keys preserved
+  })
+
+  it('unknown step ID: returns original object unchanged', () => {
+    const slice = { something: 'else' }
+    const result = mergeSliceIntoDraft(BASE, 'UNKNOWN_STEP', slice)
     expect(result).toEqual(BASE)
   })
 

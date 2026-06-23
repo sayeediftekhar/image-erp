@@ -48,8 +48,24 @@ export default async function WizardPage({ searchParams }: Props) {
 
   const dayRow = rows?.[0] ?? null
 
-  // Submitted days are read-only; the wizard must not open them (view comes in T3d)
-  if (dayRow && dayRow.status !== 'DRAFT') redirect('/revenue')
+  // Submitted days are read-only — redirect to the view page rather than the wizard
+  if (dayRow && dayRow.status !== 'DRAFT') redirect(`/revenue/day/${date}`)
+
+  // opening_cash (a): carry-forward from the most-recent prior SUBMITTED day.
+  // NUMERIC-as-string guard: Number() on the JSONB value.
+  const { data: priorDay } = await supabase
+    .from('revenue_day')
+    .select('draft_data')
+    .eq('entity_id', appUser.entity_id)
+    .eq('status', 'SUBMITTED')
+    .lt('revenue_date', date)
+    .order('revenue_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const priorFinancial = (priorDay?.draft_data as Record<string, unknown> | null)
+    ?.financial as Record<string, unknown> | undefined
+  const openingCash = Number(priorFinancial?.cash_in_hand_counted ?? 0) || 0
 
   return (
     <WizardClient
@@ -59,6 +75,7 @@ export default async function WizardPage({ searchParams }: Props) {
       caps={caps}
       initialDraft={dayRow?.draft_data ?? null}
       revenueDayId={dayRow?.id ?? null}
+      openingCash={openingCash}
     />
   )
 }
