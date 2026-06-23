@@ -2,7 +2,10 @@
 
 import { useState } from 'react'
 import { filterUsgEntries, type UsgEntry } from '@/lib/revenue/draft-merge'
-import { strToMoney, strToInt, moneyToStr } from '@/lib/revenue/money-input'
+import {
+  strToMoney, strToInt, moneyToStr,
+  sanitizeMoney, sanitizeCount, parseMoneyField,
+} from '@/lib/revenue/money-input'
 import { stepKeyDown } from './step-key-down'
 import UsgSection from './UsgSection'
 
@@ -67,10 +70,25 @@ export default function OutdoorSession({
   const [labRevenue,       setLabRevenue]       = useState(() => moneyToStr(init.lab_revenue))
   const [usgEntries,       setUsgEntries]       = useState<UsgEntry[]>(init.usg)
 
+  const [fieldError, setFieldError] = useState<string | null>(null)
+
   const isSatellite = channel === 'SATELLITE'
   const serviceChargeHint = isSatellite ? '→ 4040 PI-Satellite' : '→ 4010 PI-Outdoor'
 
   async function handleSave() {
+    // Save-time validation: parseMoneyField errors on >2dp (system must not silently
+    // change the manager's number). sanitizeMoney in onChange means this rarely fires.
+    setFieldError(null)
+    const moneyChecks: [string, string][] = [
+      ['Service charge', serviceCharge],
+      ['RDF medicine sales', rdfMedicineSales],
+      ['Lab revenue', labRevenue],
+    ]
+    for (const [label, raw] of moneyChecks) {
+      const r = parseMoneyField(raw)
+      if (!r.ok) { setFieldError(`${label}: ${r.error}`); return }
+    }
+
     const base = {
       patients_new:       strToInt(patientsNew),
       patients_old:       strToInt(patientsOld),
@@ -98,7 +116,7 @@ export default function OutdoorSession({
           <label className="text-sm font-medium text-gray-700">New patients</label>
           <input type="text" inputMode="numeric" placeholder="0"
             value={patientsNew}
-            onChange={e => setPatientsNew(e.target.value)}
+            onChange={e => setPatientsNew(sanitizeCount(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -107,7 +125,7 @@ export default function OutdoorSession({
           <label className="text-sm font-medium text-gray-700">Old patients</label>
           <input type="text" inputMode="numeric" placeholder="0"
             value={patientsOld}
-            onChange={e => setPatientsOld(e.target.value)}
+            onChange={e => setPatientsOld(sanitizeCount(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -116,7 +134,7 @@ export default function OutdoorSession({
           <label className="text-sm font-medium text-gray-700">Total services</label>
           <input type="text" inputMode="numeric" placeholder="0"
             value={services}
-            onChange={e => setServices(e.target.value)}
+            onChange={e => setServices(sanitizeCount(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -132,7 +150,7 @@ export default function OutdoorSession({
           type="text" inputMode="decimal" placeholder="0"
           aria-label="Service charge"
           value={serviceCharge}
-          onChange={e => setServiceCharge(e.target.value)}
+          onChange={e => setServiceCharge(sanitizeMoney(e.target.value))}
           className="w-full min-h-[44px] rounded-xl bg-white/10 border border-white/20 px-4 text-white text-lg font-bold placeholder-white/30"
         />
       </div>
@@ -149,7 +167,7 @@ export default function OutdoorSession({
           </label>
           <input type="text" inputMode="decimal" placeholder="0"
             value={rdfMedicineSales}
-            onChange={e => setRdfMedicineSales(e.target.value)}
+            onChange={e => setRdfMedicineSales(sanitizeMoney(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -158,7 +176,7 @@ export default function OutdoorSession({
           <label className="text-sm font-medium text-gray-700"># Lab tests</label>
           <input type="text" inputMode="numeric" placeholder="0"
             value={labTests}
-            onChange={e => setLabTests(e.target.value)}
+            onChange={e => setLabTests(sanitizeCount(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -169,7 +187,7 @@ export default function OutdoorSession({
           </label>
           <input type="text" inputMode="decimal" placeholder="0"
             value={labRevenue}
-            onChange={e => setLabRevenue(e.target.value)}
+            onChange={e => setLabRevenue(sanitizeMoney(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -177,6 +195,10 @@ export default function OutdoorSession({
 
       {/* USG */}
       <UsgSection value={usgEntries} onChange={setUsgEntries} />
+
+      {fieldError && (
+        <p className="text-red-600 text-sm font-medium" role="alert">{fieldError}</p>
+      )}
 
       {saveError && (
         <p className="text-red-600 text-sm font-medium" role="alert">{saveError}</p>

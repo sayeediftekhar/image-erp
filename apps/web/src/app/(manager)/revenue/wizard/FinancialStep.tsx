@@ -6,7 +6,7 @@ import {
   computeAdvancesReceived,
   computeReconciliation,
 } from '@/lib/revenue/reconciliation'
-import { strToMoney, moneyToStr } from '@/lib/revenue/money-input'
+import { strToMoney, moneyToStr, sanitizeMoney, parseMoneyField } from '@/lib/revenue/money-input'
 import { stepKeyDown } from './step-key-down'
 
 function tk(v: number): string {
@@ -61,6 +61,8 @@ export default function FinancialStep({
   const [reconciliationNotes, setReconciliationNotes] = useState(init.reconciliationNotes)
   const [showCashAdvance,     setShowCashAdvance]     = useState(init.cashAdvanceAmount !== '')
 
+  const [fieldError, setFieldError] = useState<string | null>(null)
+
   const income           = useMemo(() => computeDraftIncome(draftData), [draftData])
   const advancesReceived = useMemo(() => computeAdvancesReceived(draftData), [draftData])
 
@@ -81,6 +83,16 @@ export default function FinancialStep({
   })
 
   async function handleSave() {
+    setFieldError(null)
+    const moneyChecks: [string, string][] = [
+      ...(bankDepositMade ? [['PI deposited', bankDepositPi] as [string, string], ['RDF deposited', bankDepositRdf] as [string, string]] : []),
+      ...(showCashAdvance ? [['Cash advance amount', cashAdvanceAmount] as [string, string]] : []),
+      ['Cash in hand', cashInHandCounted],
+    ]
+    for (const [label, raw] of moneyChecks) {
+      const r = parseMoneyField(raw)
+      if (!r.ok) { setFieldError(`${label}: ${r.error}`); return }
+    }
     await onSave({
       bank_deposit: {
         made:       bankDepositMade,
@@ -125,7 +137,7 @@ export default function FinancialStep({
               </label>
               <input type="text" inputMode="decimal" placeholder="0"
                 value={bankDepositPi}
-                onChange={e => setBankDepositPi(e.target.value)}
+                onChange={e => setBankDepositPi(sanitizeMoney(e.target.value))}
                 className={inputClass}
               />
             </div>
@@ -135,7 +147,7 @@ export default function FinancialStep({
               </label>
               <input type="text" inputMode="decimal" placeholder="0"
                 value={bankDepositRdf}
-                onChange={e => setBankDepositRdf(e.target.value)}
+                onChange={e => setBankDepositRdf(sanitizeMoney(e.target.value))}
                 className={inputClass}
               />
             </div>
@@ -162,7 +174,7 @@ export default function FinancialStep({
                 <label className="text-sm font-medium text-gray-700">Amount (Tk)</label>
                 <input type="text" inputMode="decimal" placeholder="0"
                   value={cashAdvanceAmount}
-                  onChange={e => setCashAdvanceAmount(e.target.value)}
+                  onChange={e => setCashAdvanceAmount(sanitizeMoney(e.target.value))}
                   className={inputClass}
                 />
               </div>
@@ -203,7 +215,7 @@ export default function FinancialStep({
           <input
             type="text" inputMode="decimal" placeholder="0"
             value={cashInHandCounted}
-            onChange={e => setCashInHandCounted(e.target.value)}
+            onChange={e => setCashInHandCounted(sanitizeMoney(e.target.value))}
             className="w-full min-h-[44px] rounded-xl bg-white/10 border border-white/20 px-4 text-white text-lg font-bold placeholder-white/30"
           />
         </div>
@@ -284,6 +296,10 @@ export default function FinancialStep({
           className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base bg-white resize-none"
         />
       </section>
+
+      {fieldError && (
+        <p className="text-red-600 text-sm font-medium" role="alert">{fieldError}</p>
+      )}
 
       {saveError && (
         <p className="text-red-600 text-sm font-medium" role="alert">{saveError}</p>

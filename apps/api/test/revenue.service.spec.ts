@@ -888,10 +888,12 @@ describe('RevenueService.submitRevenueDay', () => {
   // ── Test 15: Ageing flag — returns OPEN balances past N days, excludes recent ──
   // Uses getFlaggedOpenBalances(). Threshold = 4 days (delivery_balance_flag_days setting).
   // Old revenue_date='2025-01-01' → days_open >> 4 → flagged.
-  // Recent revenue_date='2026-06-19' → days_open < 4 → not flagged.
+  // Recent revenue_date = today − 2 days → days_open = 2 < 4 → not flagged.
+  // RECENT_DATE is computed dynamically so the test does not drift as calendar advances.
   it('getFlaggedOpenBalances returns balances older than flag threshold, excludes recent', async () => {
     const OLD_DATE    = '2025-01-01';
-    const RECENT_DATE = '2026-06-19';
+    const recentMs    = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    const RECENT_DATE = new Date(recentMs).toISOString().slice(0, 10);
 
     const rdOld    = await makeRevenueDayDraft(
       jalEntityId, OLD_DATE,

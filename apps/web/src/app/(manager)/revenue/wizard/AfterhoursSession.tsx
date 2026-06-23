@@ -1,7 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { strToMoney, strToInt, moneyToStr } from '@/lib/revenue/money-input'
+import {
+  strToMoney, strToInt, moneyToStr,
+  sanitizeMoney, sanitizeCount, parseMoneyField,
+} from '@/lib/revenue/money-input'
 import { stepKeyDown } from './step-key-down'
 
 interface AfterhoursData {
@@ -40,7 +43,19 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
   const [rdfMedicineSales, setRdfMedicineSales] = useState(() => moneyToStr(init.rdf_medicine_sales))
   const [logisticSales,    setLogisticSales]    = useState(() => moneyToStr(init.logistic_sales))
 
+  const [fieldError, setFieldError] = useState<string | null>(null)
+
   async function handleSave() {
+    setFieldError(null)
+    const moneyChecks: [string, string][] = [
+      ['Service charge', serviceCharge],
+      ['RDF medicine sales', rdfMedicineSales],
+      ['Logistic sales', logisticSales],
+    ]
+    for (const [label, raw] of moneyChecks) {
+      const r = parseMoneyField(raw)
+      if (!r.ok) { setFieldError(`${label}: ${r.error}`); return }
+    }
     await onSave({
       patients:           strToInt(patients),
       service_charge:     strToMoney(serviceCharge),
@@ -62,7 +77,7 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
           <label className="text-sm font-medium text-gray-700"># Customers</label>
           <input type="text" inputMode="numeric" placeholder="0"
             value={patients}
-            onChange={e => setPatients(e.target.value)}
+            onChange={e => setPatients(sanitizeCount(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -78,7 +93,7 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
           type="text" inputMode="decimal" placeholder="0"
           aria-label="Service charge"
           value={serviceCharge}
-          onChange={e => setServiceCharge(e.target.value)}
+          onChange={e => setServiceCharge(sanitizeMoney(e.target.value))}
           className="w-full min-h-[44px] rounded-xl bg-white/10 border border-white/20 px-4 text-white text-lg font-bold placeholder-white/30"
         />
       </div>
@@ -93,7 +108,7 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
           </label>
           <input type="text" inputMode="decimal" placeholder="0"
             value={rdfMedicineSales}
-            onChange={e => setRdfMedicineSales(e.target.value)}
+            onChange={e => setRdfMedicineSales(sanitizeMoney(e.target.value))}
             className={inputClass}
           />
         </div>
@@ -104,11 +119,15 @@ export default function AfterhoursSession({ initialData, onSave, isSaving, saveE
           </label>
           <input type="text" inputMode="decimal" placeholder="0"
             value={logisticSales}
-            onChange={e => setLogisticSales(e.target.value)}
+            onChange={e => setLogisticSales(sanitizeMoney(e.target.value))}
             className={inputClass}
           />
         </div>
       </section>
+
+      {fieldError && (
+        <p className="text-red-600 text-sm font-medium" role="alert">{fieldError}</p>
+      )}
 
       {saveError && (
         <p className="text-red-600 text-sm font-medium" role="alert">{saveError}</p>

@@ -1,4 +1,12 @@
-import { strToMoney, strToInt, moneyToStr } from './money-input'
+import {
+  strToMoney,
+  strToInt,
+  moneyToStr,
+  sanitizeMoney,
+  sanitizeCount,
+  parseMoneyField,
+  parseCountField,
+} from './money-input'
 
 describe('strToMoney — money field round-trip correctness', () => {
   // The core regression: browser blur must not mutate what the manager typed.
@@ -34,6 +42,24 @@ describe('strToMoney — money field round-trip correctness', () => {
   })
 })
 
+describe('strToMoney — comma fix (was: parseFloat stops at comma)', () => {
+  test('"15,000" → 15000 (not 15)', () => {
+    expect(strToMoney('15,000')).toBe(15000)
+  })
+
+  test('"15,00,000" (BD lakh) → 1500000', () => {
+    expect(strToMoney('15,00,000')).toBe(1500000)
+  })
+
+  test('"15abc" → 0 (full-string rejection, not partial parse)', () => {
+    expect(strToMoney('15abc')).toBe(0)
+  })
+
+  test('"1.2.3" → 0 (two dots, invalid)', () => {
+    expect(strToMoney('1.2.3')).toBe(0)
+  })
+})
+
 describe('strToInt', () => {
   test('50 typed → exactly 50', () => {
     expect(strToInt('50')).toBe(50)
@@ -47,8 +73,18 @@ describe('strToInt', () => {
     expect(strToInt('-3')).toBe(0)
   })
 
-  test('float string → truncated integer', () => {
-    expect(strToInt('3.9')).toBe(3)
+  test('decimal string → 0 (not a whole number; was: truncated to 3)', () => {
+    // Old parseInt("3.9", 10) = 3 was a partial-parse bug analogous to the comma bug.
+    // strToInt now rejects non-integers to avoid silent coercion.
+    expect(strToInt('3.9')).toBe(0)
+  })
+
+  test('"15,000" → 15000 (comma fix)', () => {
+    expect(strToInt('15,000')).toBe(15000)
+  })
+
+  test('"abc" → 0', () => {
+    expect(strToInt('abc')).toBe(0)
   })
 })
 
@@ -63,6 +99,145 @@ describe('moneyToStr', () => {
 
   test('1500.5 → "1500.5"', () => {
     expect(moneyToStr(1500.5)).toBe('1500.5')
+  })
+})
+
+// ── sanitizeMoney ─────────────────────────────────────────────────────────────
+
+describe('sanitizeMoney', () => {
+  test('"15,000" → "15000"', () => {
+    expect(sanitizeMoney('15,000')).toBe('15000')
+  })
+
+  test('"15,00,000" (BD lakh) → "1500000"', () => {
+    expect(sanitizeMoney('15,00,000')).toBe('1500000')
+  })
+
+  test('"abc" → ""', () => {
+    expect(sanitizeMoney('abc')).toBe('')
+  })
+
+  test('"15abc" → "15"', () => {
+    expect(sanitizeMoney('15abc')).toBe('15')
+  })
+
+  test('"15.50" → "15.50" (unchanged)', () => {
+    expect(sanitizeMoney('15.50')).toBe('15.50')
+  })
+
+  test('"15." → "15." (trailing dot preserved during typing)', () => {
+    expect(sanitizeMoney('15.')).toBe('15.')
+  })
+
+  test('"" → ""', () => {
+    expect(sanitizeMoney('')).toBe('')
+  })
+
+  // ── Second-dot rule: drop, never merge ──────────────────────────────────────
+  // A second dot MUST NOT cause digits from different segments to merge.
+  // "1.2.3" → "1.2"   (not "1.23" — "3" is after the second dot, dropped)
+  // "15.00.00" → "15.00"  (not "15.0000")
+  test('"1.2.3" → "1.2" (second dot + "3" dropped; NOT merged to "1.23")', () => {
+    expect(sanitizeMoney('1.2.3')).toBe('1.2')
+  })
+
+  test('"15.00.00" → "15.00" (not "15.0000")', () => {
+    expect(sanitizeMoney('15.00.00')).toBe('15.00')
+  })
+
+  // ── 2dp keystroke-block ─────────────────────────────────────────────────────
+  test('"15.999" → "15.99" (3rd decimal digit blocked)', () => {
+    expect(sanitizeMoney('15.999')).toBe('15.99')
+  })
+
+  test('"0.123" → "0.12" (2dp cap)', () => {
+    expect(sanitizeMoney('0.123')).toBe('0.12')
+  })
+})
+
+// ── sanitizeCount ─────────────────────────────────────────────────────────────
+
+describe('sanitizeCount', () => {
+  test('"15,000" → "15000"', () => {
+    expect(sanitizeCount('15,000')).toBe('15000')
+  })
+
+  test('"abc" → ""', () => {
+    expect(sanitizeCount('abc')).toBe('')
+  })
+
+  test('"3" → "3"', () => {
+    expect(sanitizeCount('3')).toBe('3')
+  })
+
+  test('"3.5" → "35" (dot stripped; for counts, dot is invalid)', () => {
+    expect(sanitizeCount('3.5')).toBe('35')
+  })
+
+  test('"" → ""', () => {
+    expect(sanitizeCount('')).toBe('')
+  })
+})
+
+// ── parseMoneyField ───────────────────────────────────────────────────────────
+
+describe('parseMoneyField', () => {
+  test('valid integer → ok', () => {
+    expect(parseMoneyField('15000')).toEqual({ ok: true, value: 15000 })
+  })
+
+  test('"15.50" → ok (2dp)', () => {
+    expect(parseMoneyField('15.50')).toEqual({ ok: true, value: 15.5 })
+  })
+
+  test('empty string → ok(0) (optional field, not an error)', () => {
+    expect(parseMoneyField('')).toEqual({ ok: true, value: 0 })
+  })
+
+  test('"15,000" → ok(15000) (comma stripped)', () => {
+    expect(parseMoneyField('15,000')).toEqual({ ok: true, value: 15000 })
+  })
+
+  test('>2dp → error (system must not silently change the manager\'s number)', () => {
+    const r = parseMoneyField('15.999')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/decimal/i)
+  })
+
+  test('"abc" → error', () => {
+    expect(parseMoneyField('abc').ok).toBe(false)
+  })
+
+  test('"15abc" → error (partial parse rejected)', () => {
+    expect(parseMoneyField('15abc').ok).toBe(false)
+  })
+
+  test('negative string → error', () => {
+    expect(parseMoneyField('-100').ok).toBe(false)
+  })
+})
+
+// ── parseCountField ───────────────────────────────────────────────────────────
+
+describe('parseCountField', () => {
+  test('"3" → ok(3)', () => {
+    expect(parseCountField('3')).toEqual({ ok: true, value: 3 })
+  })
+
+  test('empty → ok(0)', () => {
+    expect(parseCountField('')).toEqual({ ok: true, value: 0 })
+  })
+
+  test('"3.5" → error (not a whole number)', () => {
+    expect(parseCountField('3.5').ok).toBe(false)
+  })
+
+  test('"abc" → error', () => {
+    expect(parseCountField('abc').ok).toBe(false)
+  })
+
+  test('"15,000" → ok(15000) (comma stripped)', () => {
+    expect(parseCountField('15,000')).toEqual({ ok: true, value: 15000 })
   })
 })
 

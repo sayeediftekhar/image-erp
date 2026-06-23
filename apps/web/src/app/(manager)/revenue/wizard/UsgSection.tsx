@@ -1,6 +1,7 @@
 'use client'
 
 import type { UsgEntry } from '@/lib/revenue/draft-merge'
+import { strToMoney, strToInt, sanitizeMoney, sanitizeCount } from '@/lib/revenue/money-input'
 
 const USG_LABELS: Record<UsgEntry['type'], string> = {
   PP:      'PP',
@@ -21,10 +22,13 @@ export default function UsgSection({ value, onChange }: Props) {
 
   function updateEntry(index: number, field: 'count' | 'revenue', raw: string) {
     const next = [...value]
-    const parsed = field === 'count'
-      ? parseInt(raw || '0', 10)
-      : parseFloat(raw || '0')
-    next[index] = { ...next[index], [field]: isNaN(parsed) || parsed < 0 ? 0 : parsed }
+    if (field === 'count') {
+      const sanitized = sanitizeCount(raw)
+      next[index] = { ...next[index], count: strToInt(sanitized) }
+    } else {
+      const sanitized = sanitizeMoney(raw)
+      next[index] = { ...next[index], revenue: strToMoney(sanitized) }
+    }
     onChange(next)
   }
 

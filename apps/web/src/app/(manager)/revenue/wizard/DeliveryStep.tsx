@@ -2,7 +2,11 @@
 
 import { useState } from 'react'
 import type { EntityCapabilities } from '@/lib/capabilities'
-import { strToMoney, strToInt, moneyToStr } from '@/lib/revenue/money-input'
+import {
+  strToMoney, strToInt, moneyToStr,
+  sanitizeMoney, sanitizeCount, parseMoneyField,
+} from '@/lib/revenue/money-input'
+import { validateRequiredText } from '@/lib/revenue/validation'
 import { stepKeyDown } from './step-key-down'
 
 // Balance entries hold string display values for numeric fields so the input
@@ -98,11 +102,17 @@ export default function DeliveryStep({ caps, initialData, onSave, isSaving, save
       : { cases: 0, balances: [] as BalanceEntry[] }
   )
 
+  const [fieldError, setFieldError] = useState<string | null>(null)
+
   const inputClass = 'w-full min-h-[44px] rounded-xl border border-gray-300 px-4 text-base bg-white'
 
   function updateBalance(idx: number, patch: Partial<BalanceEntry>) {
+    // Sanitize money strings inline so comma-separated input is corrected at keystroke
+    const sanitized: Partial<BalanceEntry> = { ...patch }
+    if (typeof patch.advance === 'string') sanitized.advance = sanitizeMoney(patch.advance)
+    if (typeof patch.expected_balance === 'string') sanitized.expected_balance = sanitizeMoney(patch.expected_balance)
     setCsection(prev => {
-      const balances = prev.balances.map((b, i) => i === idx ? { ...b, ...patch } : b)
+      const balances = prev.balances.map((b, i) => i === idx ? { ...b, ...sanitized } : b)
       return { ...prev, cases: balances.length, balances }
     })
   }
@@ -122,6 +132,34 @@ export default function DeliveryStep({ caps, initialData, onSave, isSaving, save
   }
 
   async function handleSave() {
+    setFieldError(null)
+
+    // NVD money validation
+    if (caps.delivery.nvd) {
+      const nvdChecks: [string, string][] = [
+        ['NVD service charge', nvdCharge],
+        ['NVD RDF medicine', nvdRdf],
+        ['NVD logistics', nvdLogistic],
+      ]
+      for (const [label, raw] of nvdChecks) {
+        const r = parseMoneyField(raw)
+        if (!r.ok) { setFieldError(`${label}: ${r.error}`); return }
+      }
+    }
+
+    // C-section balance validation
+    if (caps.delivery.csection) {
+      for (let i = 0; i < csection.balances.length; i++) {
+        const b = csection.balances[i]
+        const nameR = validateRequiredText(b.patient_name, 'Patient name')
+        if (!nameR.ok) { setFieldError(`Patient ${i + 1}: ${nameR.error}`); return }
+        const advR = parseMoneyField(b.advance)
+        if (!advR.ok) { setFieldError(`Patient ${i + 1} advance: ${advR.error}`); return }
+        const expR = parseMoneyField(b.expected_balance)
+        if (!expR.ok) { setFieldError(`Patient ${i + 1} expected balance: ${expR.error}`); return }
+      }
+    }
+
     const delivery: Record<string, unknown> = {}
 
     if (caps.delivery.nvd) {
@@ -163,7 +201,7 @@ export default function DeliveryStep({ caps, initialData, onSave, isSaving, save
             <label className="text-sm font-medium text-gray-700"># Cases</label>
             <input type="text" inputMode="numeric" placeholder="0"
               value={nvdCases}
-              onChange={e => setNvdCases(e.target.value)}
+              onChange={e => setNvdCases(sanitizeCount(e.target.value))}
               className={inputClass}
             />
           </div>
@@ -175,7 +213,7 @@ export default function DeliveryStep({ caps, initialData, onSave, isSaving, save
             </label>
             <input type="text" inputMode="decimal" placeholder="0"
               value={nvdCharge}
-              onChange={e => setNvdCharge(e.target.value)}
+              onChange={e => setNvdCharge(sanitizeMoney(e.target.value))}
               className="w-full min-h-[44px] rounded-xl bg-white/10 border border-white/20 px-4 text-white text-lg font-bold placeholder-white/30"
             />
           </div>
@@ -186,7 +224,7 @@ export default function DeliveryStep({ caps, initialData, onSave, isSaving, save
             </label>
             <input type="text" inputMode="decimal" placeholder="0"
               value={nvdRdf}
-              onChange={e => setNvdRdf(e.target.value)}
+              onChange={e => setNvdRdf(sanitizeMoney(e.target.value))}
               className={inputClass}
             />
           </div>
@@ -197,7 +235,7 @@ export default function DeliveryStep({ caps, initialData, onSave, isSaving, save
             </label>
             <input type="text" inputMode="decimal" placeholder="0"
               value={nvdLogistic}
-              onChange={e => setNvdLogistic(e.target.value)}
+              onChange={e => setNvdLogistic(sanitizeMoney(e.target.value))}
               className={inputClass}
             />
           </div>
@@ -301,6 +339,10 @@ export default function DeliveryStep({ caps, initialData, onSave, isSaving, save
             + Add another C-section patient
           </button>
         </section>
+      )}
+
+      {fieldError && (
+        <p className="text-red-600 text-sm font-medium" role="alert">{fieldError}</p>
       )}
 
       {saveError && (
