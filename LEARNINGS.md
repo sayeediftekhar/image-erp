@@ -3,6 +3,33 @@
 Durable quirks and facts. Add to this whenever something costs >5 min to rediscover.
 
 ## Discovered while building (newest first)
+- **Gate: `go_live_month NULL` = never gated; first-month-trap guard is mandatory (P2-T3f-B).**
+  If `go_live_month` is NULL the gate is dormant — no queries, no blocks. Always ship the gate with
+  NULL so it's opt-in per entity. First-month-trap: if the prior month of `monthN` predates
+  `go_live_month`, the prior month legitimately has zero entries (all MISSING); checking
+  "prior complete" would block the go-live month forever. Rule: `if prevMonth(monthN) < goLiveMonth
+  → allowed` must be ordered BEFORE the prior-completeness check in `isEntryAllowed`.
+- **`tests-green ≠ browser-works` — always verify the DATABASE_URL/.env.local chain (P2-T3b).**
+  `mark-closed` (T3a) worked in Jest but silently failed in the browser for weeks. Root cause:
+  `pool` in the route fell back to the local `erp_test` Postgres URL when `DATABASE_URL` was absent
+  from `.env.local`, so every FK lookup missed the live Supabase data → opaque 500 errors. Fix:
+  ensure `DATABASE_URL` in `apps/web/.env.local` is set and points at the same DB the Supabase
+  client reads. Always do a browser smoke-test of any route that uses `pool` after first wiring it up.
+  *(GitHub issue #4 — dev/prod DB separation; pre-pilot: stand up a separate Supabase dev project.)*
+- **Round-of-sum vs sum-of-rounds: pick ONE paisa rounding point (P2-T3d).** Rounding each fund
+  sub-total independently and summing produces a ±1 paisa divergence from rounding the total first.
+  The engine's Σdr=Σcr check operates on the final INT paisa values — any multi-point rounding
+  upstream will trigger a balance-check failure. Pattern: compute all sub-totals in raw paisa
+  (integer arithmetic or a single `Math.round(total * 100)`) and derive the split from that, not
+  by rounding each split independently. `computeDraftFundSplit` in `reconciliation.ts` implements this.
+- **Strip ALL commas before parsing money; never use `type=number` for money inputs (P2-T3e fix).**
+  BD lakh format uses commas as thousands separators (e.g. "১৫,০০০" or "15,000").
+  `parseFloat('15,000')` silently returns 15 — a 1000× undercount that corrupts stored figures
+  without any error. Fix: strip commas unconditionally before any numeric parse. Separately:
+  `<input type="number">` reformats its displayed value on blur — if the user entered "15000" and
+  the browser reformats to "15,000", the next read is again corrupted. Always use `type=text` +
+  `sanitizeMoney`/`parseMoneyField` helpers. Unit tests cannot catch this because jsdom does not
+  replicate browser blur-reformat behaviour.
 - **C-section discharge cash distortion (P2-T2b):** all C-section discharge cash routes to
   1010/PI as a deliberate simplification. The RDF income portions (4110/4130) do NOT carry
   matching RDF cash — a known PI/RDF fund-cash distortion deferred to Phase 4/5 to resolve

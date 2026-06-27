@@ -397,11 +397,26 @@ live on Supabase).
 - P2-T3a: Revenue Entry Management page + mark-closed zero-day (committed 38083bd).
 - P2-T3-shell: ManagerShell + nav + Home dashboard + capabilities matrix (committed 2026-06-22).
 
-- P2-T3b: Wizard shell + draft lifecycle + Step 1 day-setup (channels-active).
+- P2-T3b: Wizard shell + draft lifecycle + Step 1 day-setup (channels-active). Committed 2be0c5a.
+- P2-T3c: Session screens — OutdoorSession/AfterhoursSession/UsgSection. Committed 60edc6d.
+- P2-T3d: Delivery step, financial wrap-up, review/submit, submit-day route. Committed 47d6010.
+- P2-T3e: Deliveries management page, DischargeForm (C-section discharge balance close + ageing),
+  close-balance route. Bundled in 413dbf6 (also includes money/count validation fix).
+- Validation/comma-corruption fix: money inputs strip commas, type=text everywhere, sanitize/parse
+  helpers, BD phone validation. Committed 413dbf6.
+- P2-T3f-A: Calendar month-view for revenue management page. Committed 8377d76.
+- P2-T3f-B: Month-completeness gate + admin override. Migration 0014. Committed 9c3e63e.
+- P2-T3g: Mark-closed button on day-setup + Morning/Evening "session" relabels. Committed 8a9ea60.
 
-**Next: P2-T3c** — session screens (Morning/Evening/After-hours/Satellite). Gate: reconcile Phase2_Revenue_Mapping_v2.md §1/§3/§7 to the 2150 model before building.
+**Revenue-entry surface is substantially complete.**
 
-*Design decisions:* Manager-shell task inserted before T3b — the manager surface (T3a) was built without the persistent-shell step that the admin panel got in T8a; inserting it now keeps the plan's shell-before-pages order. T3b uses loose partial storage for draft_data (full DraftDataSchema.parse only at submit in T3d) so mid-wizard drafts without financial data are valid DRAFT rows.
+**Next: expense form** — mapping §4 (expense accounts, fund-first), slicing TBD pending how managers
+predominantly record expenses. Read Phase2_Revenue_Mapping_v2.md §4 before building.
+
+*Design decisions:* Manager-shell task inserted before T3b — the manager surface (T3a) was built without
+the persistent-shell step that the admin panel got in T8a; inserting it now keeps the plan's shell-before-
+pages order. T3b uses loose partial storage for draft_data (full DraftDataSchema.parse only at submit in T3d)
+so mid-wizard drafts without financial data are valid DRAFT rows.
 
 ---
 ## Session: 2026-06-23
@@ -410,8 +425,9 @@ Branch: main
 **P2-T3c (committed 60edc6d)** — morning/evening/satellite/afterhours/USG session screens.
   OutdoorSession (channel prop → 4010 vs 4040), AfterhoursSession, UsgSection. 70/70 web + 67/67 API green.
 
-**P2-T3d (pending browser-verify)** — Delivery step (NVD + C-section advance), Financial wrap-up
-  with live reconciliation, Review & Submit step, and the submit-day route that calls the frozen engine.
+**P2-T3d (committed 47d6010, browser-verified)** — Delivery step (NVD + C-section advance), Financial
+  wrap-up with live reconciliation, Review & Submit step, and the submit-day route that calls the frozen
+  engine.
 
 Key additions:
 - `reconciliation.ts` — `computeDraftFundSplit` (paisa-integer rounding matching engine's `buildIncomeInput`),
@@ -423,7 +439,7 @@ Key additions:
 - `/revenue/day/[date]` — read-only ReviewStep for SUBMITTED days; carry-forward openingCash.
 - `RevenueManagementClient` — ENTERED rows now show "View →" link to `/revenue/day/{date}`.
 - `wizard/page.tsx` — SUBMITTED redirect to `/revenue/day/{date}`; openingCash carry-forward query.
-- 99/99 web tests, 67/67 API tests green.
+- 118 web + 67 API tests green. Browser-verified end-to-end on live Supabase.
 
 **Known limitations logged (do NOT solve in T3d):**
 - **Out-of-order batch entry accuracy:** managers commonly enter days 2–3 days late in one sitting.
@@ -441,3 +457,116 @@ Key additions:
   `stripInactiveChannels` is called in `handleSubmit` before the final save-draft; engine reads stripped data.
 - **C-section UI labels "advance / deposit held" throughout** (never "income" or "earnings") — correct per
   the 2150 holding-account model. Any future UI touching C-section must maintain this convention.
+
+---
+## Session: 2026-06-24
+Branch: main
+
+**P2-T3e (bundled in 413dbf6)** — Deliveries management page + DischargeForm (C-section discharge
+  balance close) + `/api/manager/close-balance` route. Deliveries page lists open and recently-closed
+  C-section balances per entity; discharge page carries expected/actual balance with real closeDeliveryBalance
+  call; entity-scoped authorisation enforced in the route (carries forward the P2-T2b open issue).
+  GitHub issue #6 (entity authz gap): CLOSED — route enforces ENTRY → own entity isolation before calling
+  `closeDeliveryBalance`; gap is resolved.
+
+**Validation/comma-corruption fix (413dbf6)** — Critical ledger-corruption bug: `parseFloat('15,000')`
+  silently returned 15 in the money input helpers, corrupting live 2150 advances and income figures.
+  Root cause: BD lakh/comma-formatted numbers (e.g. "১৫,০০০") and standard commas both appear in
+  manager input; strToMoney/strToInt did not strip them. Fix: strip ALL commas unconditionally before
+  parse + validate the full stripped string. Also switched all money inputs to `type=text` (type=number
+  causes silent blur-reformatting corruption that unit tests never catch). Added
+  `sanitizeMoney`/`sanitizeCount` (keystroke-level), `parseMoneyField`/`parseCountField` (save-time),
+  `validateBdPhone`, `validateRequiredText`. Applied across 20 money + 6 count input sites in 7
+  components. Browser-verified on live Supabase. 173 web + 67 API green.
+
+**Github issues formalised this session:**
+- Issue #4: **Dev/prod DB separation** — `DATABASE_URL` in `.env.local` hits the live production
+  Supabase; dev writes to prod. Accepted pre-pilot; must resolve before real clinic data lands.
+  Root cause of T3a mark-closed never working in the browser (pool fell back to local `erp_test`
+  DB while the browser hit live Supabase → FK failures). Stand up a separate Supabase dev project
+  and repoint DATABASE_URL before pilot. *(Carried forward — GitHub issue #4.)*
+- Issue #5: **Submitted-day correction/reversal flow** — once a day is SUBMITTED, its journal lines
+  are immutable (block_posted_mutation). Correcting requires reverseEntry (counter-entry) + re-entry,
+  NOT an edit. The UI is not built. Decision deferred: admin-initiated/approved (maker-checker) vs
+  manager-self-service. *(GitHub issue #5.)*
+- Issue #6: CLOSED (see P2-T3e above).
+- Issue #7: **PI/RDF fund-cash distortion** — C-section discharge cash routes entirely to 1010/PI;
+  the RDF income portions (4110/4130) do NOT carry matching RDF cash. Structural simplification,
+  deferred to Phase 4/5 bank-reconciliation model. *(GitHub issue #7.)*
+- Issue #8: **Discharge-balance cash outside the daily recon seam** — cash received at discharge is
+  posted by closeDeliveryBalance, NOT the daily wizard. The daily cash identity
+  (opening + income − deposit − advance = closing) does NOT include discharge-balance cash-in or
+  refund cash-out. Reconciliation UI must account for these separately. *(GitHub issue #8.)*
+
+**Transactional-table TRUNCATE convention** — clean test-ledger slate for Jest integration tests:
+  TRUNCATE (in FK-safe order) `journal_lines`, `journal_entries`, `daily_activity`,
+  `delivery_balance`, `revenue_day` in `afterEach`/`afterAll` blocks that write to the ledger.
+  These are the five tables the engine writes to. Established in T3d/T3e test suites.
+
+**P2-T3f-A (committed 8377d76)** — replaced the scrolling day-list on `/revenue` with a
+  Sunday-first month-grid calendar. Status-coloured tiles (red/amber/green/grey/neutral), tap routing
+  (MISSING/DRAFT→wizard, SUBMITTED/CLOSED→day-view), prev/next month nav, jump-to-today, count header.
+  Pure `buildCalendarGrid`/`tapRoute` helpers; reuses classifyDays; `DayTile` accepts `locked?` prop
+  reserved for T3f-B (gate-ready). Presentation only — posts nothing. 199 web tests green;
+  browser-verified.
+
+---
+## Session: 2026-06-27
+Branch: main
+
+**P2-T3f-B (committed 9c3e63e)** — month-completeness gate + admin override. ENTRY managers past
+  the 10th of a month cannot enter that month until the prior month has zero MISSING days, unless an
+  admin override exists or the month predates the entity's go_live_month.
+- Pure `isEntryAllowed` (12 branch tests); Correction 1: prior month predating go-live must not gate
+  the go-live month itself (first-month-trap guard).
+- Grace window: first 10 days of the month are always open (no DB queries).
+- Server-side enforcement at three write points: wizard page redirect (primary), save-draft 403,
+  submit-day 403 (backstop). Locked calendar tiles are affordance only.
+- go_live_month NULL = never gated (gate ships dormant; enabled per entity at go-live).
+- Only new revenue ENTRY is gated — viewing, deliveries, C-section discharge stay open.
+- Migration 0014: `month_gate_override` table (RLS ADMIN-write/ENTRY-read-own, audited) +
+  `entities.go_live_month` (YYYY-MM CHECK). Migration verified on live Supabase.
+- Admin `/gate` page: go-live-month inline editor + override grant/revoke table.
+- 211 web tests green; browser-verified.
+- **NOTE:** RLS session-isolation tests C3/C4 (ENTRY sees own entity only; cannot INSERT) require
+  local Supabase `auth.login_as` — asserted-not-executed (Docker unavailable). Run before pilot.
+
+**P2-T3g (committed 8a9ea60)** — mark-closed button on day-setup + session relabels.
+- Always-visible "Mark day as closed (holiday / no activity)" button on Step 1 day-setup, centered,
+  slate/secondary style above the navy Save & Continue.
+- Adaptive confirm dialog: plain "Confirm mark [date] as closed?" when no channels selected;
+  discard-warning variant ("[date] has channels selected. Mark as closed and discard them?") when
+  channels are toggled on.
+- Mark-closed goes via `markClosedDay()`/`submitRevenueDay()` service path directly — NOT the gated
+  submit-day HTTP route. This is intentional: resolving a day is what the gate wants, so mark-closed
+  is correctly never gate-blocked (no deadlock).
+- "Morning clinic"/"Evening clinic" → "Morning session"/"Evening session" — display-only; channel
+  keys MORNING/EVENING, routing, and posting unchanged.
+- Removed the stale "use Mark as closed from the day list" amber hint.
+- 211 web tests green; browser-verified.
+
+## Go-live strategy (LOCKED DECISION)
+
+Pilot starts CLEAN and FORWARD-ONLY. No historical daily-entry backfill.
+
+- **Opening balances:** one opening-balance journal entry per entity at go-live (Phase 6 task).
+  This seeds the ledger position without requiring back-entered daily revenue/expense history.
+- **Bulk upload:** deferred — there is no operational requirement to import past data before pilot.
+- **`go_live_month`:** a per-entity field on `entities` (NULL = gate dormant). Set it to the first
+  month the ERP goes live for each entity. Months before `go_live_month` are never gated
+  (the gate only applies from go-live month onwards).
+- **Revenue history:** managers will enter going-forward from go-live date; prior months remain
+  unrecorded in the ERP (known gap, acceptable for pilot).
+
+## Current state (as of 2026-06-27)
+
+Revenue-entry surface is substantially complete:
+- Full wizard flow (day-setup → sessions → delivery → financial → review/submit)
+- Calendar management page with status colours and gate-locked tiles
+- Month-completeness gate with admin override and go-live month configuration
+- C-section advance/discharge close flow and ageing dashboard
+- Mark-closed for holidays/zero-activity days
+- Input validation hardened against comma-corruption
+
+**NEXT: expense form** — read Phase2_Revenue_Mapping_v2.md §4 (expense mapping, fund-first) before
+building. Slicing TBD pending how managers predominantly record expenses (per-item vs lump-sum).
