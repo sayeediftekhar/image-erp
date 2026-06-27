@@ -32,6 +32,7 @@ export const PostTransactionSchema = z.object({
     }, 'entryDate is not a valid calendar date'),
   description: z.string().min(1),
   ref: z.string().optional(),
+  chequeNumber: z.string().optional(),
   sourceModule: z.string().default('MANUAL'),
   sourceId: UuidSchema.optional(),
   lines: z.array(LineSchema).min(2),

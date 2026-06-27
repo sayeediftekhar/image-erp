@@ -1,10 +1,33 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import ExpenseForm from './ExpenseForm'
 
 export default async function ExpensesPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  const { data: appUser } = await supabase
+    .from('app_users')
+    .select('role, entity_id, active')
+    .eq('id', user.id)
+    .single()
+
+  if (!appUser || !appUser.active) redirect('/login')
+  if (!['ENTRY', 'ADMIN', 'HQ_FINANCE'].includes(appUser.role)) redirect('/login')
+
+  const entityId = appUser.entity_id as string
+
+  // Fetch entity name for display
+  let entityName = ''
+  if (entityId) {
+    const { data: entity } = await supabase
+      .from('entities')
+      .select('name')
+      .eq('id', entityId)
+      .single()
+    entityName = entity?.name ?? ''
+  }
 
   return (
     <div className="min-h-full flex flex-col">
@@ -16,23 +39,11 @@ export default async function ExpensesPage() {
         <h1 className="text-white text-2xl font-bold leading-tight">Expense Entry</h1>
       </div>
 
-      <div className="flex-1 bg-gray-50 rounded-t-3xl -mt-3 flex items-center justify-center px-6 py-12">
-        <div className="max-w-sm w-full text-center space-y-3">
-          <div
-            className="w-14 h-14 rounded-full mx-auto flex items-center justify-center"
-            style={{ background: '#0F0A52' }}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
-            </svg>
-          </div>
-          <p className="text-gray-900 font-semibold text-lg">Expense Entry</p>
-          <p className="text-gray-400 text-sm leading-relaxed">
-            Petty-cash and voucher/cheque expense entry is coming in Phase 2.
-          </p>
-        </div>
-      </div>
+      <ExpenseForm
+        entityId={entityId}
+        entityName={entityName}
+        userId={user.id}
+      />
     </div>
   )
 }

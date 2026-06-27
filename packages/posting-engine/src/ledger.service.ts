@@ -369,15 +369,16 @@ export class LedgerService {
 
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO public.journal_entries
-           (entity_id, entry_date, description, ref, status,
+           (entity_id, entry_date, description, ref, cheque_number, status,
             source_module, source_id, entered_at, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),$9)
          RETURNING id`,
         [
           input.entityId,
           input.entryDate,
           input.description,
           input.ref ?? null,
+          input.chequeNumber ?? null,
           status,
           input.sourceModule ?? 'MANUAL',
           input.sourceId ?? null,

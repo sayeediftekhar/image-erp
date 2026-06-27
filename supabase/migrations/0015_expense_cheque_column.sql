@@ -1,0 +1,13 @@
+-- ============================================================================
+-- IMAGE ERP — Migration 0015: Add cheque_number column to journal_entries
+--
+-- T4a (core expense form) makes cheque# a MUST-field when payment_method=CHEQUE.
+-- Stored as a dedicated queryable column (not embedded in description text) so
+-- Phase-4 cheque-reconciliation reports can GROUP BY or filter without string
+-- parsing. Nullable: pre-existing entries, cash/petty-cash expense entries, and
+-- all revenue postings legitimately have no cheque#.
+--
+-- Append-only: no constraint beyond nullable text — any format the manager uses
+-- is preserved as-entered (Phase-4 can normalise if needed).
+-- ============================================================================
+alter table public.journal_entries add column cheque_number text;

@@ -35,7 +35,7 @@ function buildNavItems(entityCode: string): { doing: NavItem[]; viewing: NavItem
   const doing: NavItem[] = [
     { href: '/dashboard', label: 'Home',      icon: <IconHome />,      built: true  },
     { href: '/revenue',   label: 'Revenue',   icon: <IconRevenue />,   built: true  },
-    { href: '/expenses',  label: 'Expenses',  icon: <IconExpenses />,  built: false, phase: 'Phase 2' },
+    { href: '/expenses',  label: 'Expenses',  icon: <IconExpenses />,  built: true  },
     ...(showDeliveries
       ? [{ href: '/deliveries', label: 'Deliveries', icon: <IconDelivery />, built: true }]
       : []),
