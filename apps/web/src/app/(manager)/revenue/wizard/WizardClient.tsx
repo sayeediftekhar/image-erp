@@ -28,9 +28,9 @@ function buildSteps(
     { id: 'DAY_SETUP', label: 'Day setup' },
   ]
   if (savedChannels.includes('MORNING'))
-    steps.push({ id: 'MORNING',    label: 'Morning clinic',   phase: 'T3c' })
+    steps.push({ id: 'MORNING',    label: 'Morning session',  phase: 'T3c' })
   if (savedChannels.includes('EVENING'))
-    steps.push({ id: 'EVENING',    label: 'Evening clinic',   phase: 'T3c' })
+    steps.push({ id: 'EVENING',    label: 'Evening session',  phase: 'T3c' })
   if (savedChannels.includes('AFTERHOURS'))
     steps.push({ id: 'AFTERHOURS', label: 'After-hours',      phase: 'T3c' })
   if (savedChannels.includes('SATELLITE')) {
@@ -126,6 +126,10 @@ export default function WizardClient({
   const [revenueDayId, setRevenueDayId] = useState<string | null>(initialRevenueDayId)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  const [showMarkClosedConfirm, setShowMarkClosedConfirm] = useState(false)
+  const [isMarkingClosed,       setIsMarkingClosed]       = useState(false)
+  const [markClosedError,       setMarkClosedError]        = useState<string | null>(null)
 
   const steps = useMemo(
     () => buildSteps(savedChannels, savedTeamCount, caps),
@@ -268,6 +272,34 @@ export default function WizardClient({
     }
   }
 
+  async function handleMarkClosed() {
+    setIsMarkingClosed(true)
+    setMarkClosedError(null)
+    try {
+      const res = await fetch('/api/manager/mark-closed', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ date }),
+      })
+      if (res.ok) {
+        router.push('/revenue')
+        return
+      }
+      const err = await res.json().catch(() => ({})) as { error?: string; code?: string }
+      if (err.code === 'ALREADY_SUBMITTED') {
+        setMarkClosedError('This day is already submitted.')
+      } else if (err.code === 'HAS_DRAFT_DATA') {
+        setMarkClosedError('This day has entered data — review or clear it first.')
+      } else {
+        setMarkClosedError(err.error ?? 'Failed to mark closed — please try again')
+      }
+    } catch {
+      setMarkClosedError('Network error — check your connection and try again')
+    } finally {
+      setIsMarkingClosed(false)
+    }
+  }
+
   function renderStepContent() {
     if (currentStep.id === 'DAY_SETUP') {
       return (
@@ -279,20 +311,6 @@ export default function WizardClient({
             onToggleChannel={toggleChannel}
             onTeamCountChange={setTeamCount}
           />
-          {activeChannels.size === 0 && (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-              <p className="text-amber-800 text-sm leading-relaxed">
-                No channels selected. If the clinic was fully closed today, use{' '}
-                <button
-                  onClick={() => router.push('/revenue')}
-                  className="font-semibold underline"
-                >
-                  Mark as closed
-                </button>{' '}
-                from the day list instead.
-              </p>
-            </div>
-          )}
           {saveError && (
             <p className="text-red-600 text-sm font-medium" role="alert">{saveError}</p>
           )}
@@ -428,16 +446,25 @@ export default function WizardClient({
 
       {/* Footer navigation — only for DAY_SETUP and REVIEW's back button */}
       {(isFirst || currentStep.id === 'REVIEW') && (
-        <div className="bg-white border-t border-gray-200 px-4 py-3 flex gap-3 shrink-0">
+        <div className="bg-white border-t border-gray-200 px-4 py-3 flex flex-col gap-2 shrink-0">
           {isFirst && (
-            <button
-              onClick={handleSaveStep1}
-              disabled={activeChannels.size === 0 || isSaving}
-              className="flex-1 min-h-[44px] rounded-xl font-semibold text-sm text-white disabled:opacity-40 transition-opacity"
-              style={{ background: '#13007D' }}
-            >
-              {isSaving ? 'Saving…' : 'Save & Continue →'}
-            </button>
+            <>
+              <button
+                onClick={() => setShowMarkClosedConfirm(true)}
+                disabled={isSaving || isMarkingClosed}
+                className="w-full min-h-[44px] rounded-xl border border-slate-300 bg-white text-slate-600 font-medium text-sm hover:bg-slate-50 transition-colors disabled:opacity-40"
+              >
+                Mark day as closed (holiday / no activity)
+              </button>
+              <button
+                onClick={handleSaveStep1}
+                disabled={activeChannels.size === 0 || isSaving}
+                className="w-full min-h-[44px] rounded-xl font-semibold text-sm text-white disabled:opacity-40 transition-opacity"
+                style={{ background: '#13007D' }}
+              >
+                {isSaving ? 'Saving…' : 'Save & Continue →'}
+              </button>
+            </>
           )}
         </div>
       )}
@@ -451,6 +478,40 @@ export default function WizardClient({
           >
             ← Back
           </button>
+        </div>
+      )}
+
+      {/* Mark-closed confirm dialog */}
+      {showMarkClosedConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4">
+            <h3 className="text-base font-semibold text-gray-900">
+              {activeChannels.size > 0
+                ? `${formatDate(date)} has channels selected.`
+                : `Confirm mark ${formatDate(date)} as closed?`}
+            </h3>
+            {activeChannels.size > 0 && (
+              <p className="text-sm text-gray-600">Mark as closed and discard them?</p>
+            )}
+            {markClosedError && (
+              <p className="text-sm text-red-600" role="alert">{markClosedError}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowMarkClosedConfirm(false); setMarkClosedError(null) }}
+                className="flex-1 min-h-[44px] rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMarkClosed}
+                disabled={isMarkingClosed}
+                className="flex-1 min-h-[44px] rounded-xl bg-slate-700 text-white font-semibold text-sm disabled:opacity-50"
+              >
+                {isMarkingClosed ? 'Closing…' : 'Mark closed'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

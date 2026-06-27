@@ -21,9 +21,9 @@ export interface ChannelDescriptor {
 export function getChannelDescriptors(caps: EntityCapabilities): ChannelDescriptor[] {
   const result: ChannelDescriptor[] = []
   if (caps.sessions.morning)
-    result.push({ token: 'MORNING',    label: 'Morning clinic',  phase: 'T3c' })
+    result.push({ token: 'MORNING',    label: 'Morning session', phase: 'T3c' })
   if (caps.sessions.evening)
-    result.push({ token: 'EVENING',    label: 'Evening clinic',  phase: 'T3c' })
+    result.push({ token: 'EVENING',    label: 'Evening session', phase: 'T3c' })
   if (caps.sessions.afterhours)
     result.push({ token: 'AFTERHOURS', label: 'After-hours',     phase: 'T3c' })
   if (caps.satellite)
