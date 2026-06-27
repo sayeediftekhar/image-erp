@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { pool } from '@/lib/db/pool'
 import { saveDraftDay, DraftSaveError } from '@/lib/revenue/save-draft'
 import { getDhakaToday } from '@/lib/revenue/classify'
+import { checkGateForMonth } from '@/lib/revenue/gate'
 
 const BodySchema = z.object({
   date:         z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
@@ -65,9 +66,24 @@ export async function POST(request: Request) {
   }
 
   // ── 4. Guard: cannot draft a future day ───────────────────────────────────
+  // todayDhaka is server-resolved (Asia/Dhaka) — never trust a client value.
   const todayDhaka = getDhakaToday()
   if (date > todayDhaka) {
     return NextResponse.json({ error: 'Cannot save a draft for a future day' }, { status: 400 })
+  }
+
+  // ── 4b. Gate check (ENTRY only — backstop; wizard page is the primary guard) ─
+  // A manager who bypasses the wizard page via direct POST is still blocked here.
+  // Uses getDhakaToday() server-side so a spoofed grace-window date is not trusted.
+  if (appUser.role === 'ENTRY') {
+    const monthN = date.slice(0, 7)
+    const gateResult = await checkGateForMonth(supabase, entityId, monthN, todayDhaka, 'ENTRY')
+    if (!gateResult.allowed) {
+      return NextResponse.json(
+        { error: 'Entry blocked — resolve prior month first', code: 'GATE_BLOCKED' },
+        { status: 403 },
+      )
+    }
   }
 
   // ── 5. Execute ────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { classifyDays, getDhakaToday } from '@/lib/revenue/classify'
+import { checkGateForMonth } from '@/lib/revenue/gate'
 import RevenueManagementClient from './RevenueManagementClient'
 
 interface Props {
@@ -52,12 +53,23 @@ export default async function RevenuePage({ searchParams }: Props) {
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
   const days = classifyDays(rows ?? [], todayDhaka, year, month)
 
+  // ── Gate check — pass gateInfo to calendar for locked tiles + banner ───────
+  // Non-null gateInfo = this month is gated: show locked treatment + nudge.
+  // Viewing is never blocked; only enterable tiles are affected.
+  const gateResult = await checkGateForMonth(
+    supabase, appUser.entity_id, monthStr, todayDhaka, appUser.role,
+  )
+  const gateInfo = gateResult.allowed
+    ? null
+    : { priorMonth: gateResult.priorMonth, missingCount: gateResult.missingCount }
+
   return (
     <RevenueManagementClient
       days={days}
       todayDhaka={todayDhaka}
       month={monthStr}
       entityId={appUser.entity_id}
+      gateInfo={gateInfo}
     />
   )
 }

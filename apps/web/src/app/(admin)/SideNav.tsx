@@ -19,6 +19,12 @@ const NAV_SECTIONS = [
       { label: 'Settings', href: '/settings', built: true  },
     ],
   },
+  {
+    label: 'ACCESS CONTROL',
+    items: [
+      { label: 'Gate Overrides', href: '/gate', built: true },
+    ],
+  },
 ]
 
 interface Props {

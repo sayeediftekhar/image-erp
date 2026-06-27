@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getEntityCapabilities } from '@/lib/capabilities'
 import { getDhakaToday } from '@/lib/revenue/classify'
+import { checkGateForMonth } from '@/lib/revenue/gate'
 import WizardClient from './WizardClient'
 
 interface Props {
@@ -25,8 +26,16 @@ export default async function WizardPage({ searchParams }: Props) {
   // Validate + bound-check the date param
   const date = searchParams?.date ?? ''
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) redirect('/revenue')
+  // todayDhaka is server-resolved (Asia/Dhaka) — never trust a client value.
   const todayDhaka = getDhakaToday()
   if (date > todayDhaka) redirect('/revenue')
+
+  // ── Gate check (ENTRY only, server-side — authoritative enforcement) ────────
+  // A spoofed client could craft a URL bypassing the grace window; the server
+  // must check using getDhakaToday() before rendering or responding.
+  const monthN = date.slice(0, 7)
+  const gateResult = await checkGateForMonth(supabase, appUser.entity_id, monthN, todayDhaka, appUser.role)
+  if (!gateResult.allowed) redirect('/revenue')
 
   // Fetch entity name + capabilities
   const { data: entity } = await supabase

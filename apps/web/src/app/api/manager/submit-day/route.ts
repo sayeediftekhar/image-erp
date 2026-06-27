@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import { pool } from '@/lib/db/pool'
 import { LedgerService, RevenueService } from '@image-erp/posting-engine'
+import { getDhakaToday } from '@/lib/revenue/classify'
+import { checkGateForMonth } from '@/lib/revenue/gate'
 
 const BodySchema = z.object({
   revenueDayId: z.string().uuid('revenueDayId must be a valid UUID'),
@@ -63,11 +65,14 @@ export async function POST(request: Request) {
   }
 
   // ── 4. Fetch revenue_day — entity isolation check ─────────────────────────
-  // No DATE column fetched here; no ::text cast needed (LEARNINGS: cast DATE::text when selected).
-  let row: { id: string; entity_id: string; status: string } | null = null
+  // revenue_date::text cast required (LEARNINGS: pg date→JS Date by default;
+  // cast to text to keep it as YYYY-MM-DD string for the gate check below).
+  let row: { id: string; entity_id: string; status: string; revenue_date: string } | null = null
   try {
-    const { rows } = await pool.query<{ id: string; entity_id: string; status: string }>(
-      'SELECT id, entity_id, status FROM public.revenue_day WHERE id = $1',
+    const { rows } = await pool.query<{
+      id: string; entity_id: string; status: string; revenue_date: string
+    }>(
+      'SELECT id, entity_id, status, revenue_date::text AS revenue_date FROM public.revenue_day WHERE id = $1',
       [revenueDayId],
     )
     row = rows[0] ?? null
@@ -87,6 +92,21 @@ export async function POST(request: Request) {
       { error: 'Day is already submitted', code: 'ALREADY_SUBMITTED' },
       { status: 409 },
     )
+  }
+
+  // ── 4b. Gate check (ENTRY only — backstop) ─────────────────────────────────
+  // todayDhaka is server-resolved (Asia/Dhaka) — a spoofed client cannot bypass
+  // the grace window by supplying a manipulated date.
+  if (appUser.role === 'ENTRY') {
+    const todayDhaka = getDhakaToday()
+    const monthN     = row.revenue_date.slice(0, 7)
+    const gateResult = await checkGateForMonth(supabase, callerEntityId, monthN, todayDhaka, 'ENTRY')
+    if (!gateResult.allowed) {
+      return NextResponse.json(
+        { error: 'Submit blocked — resolve prior month first', code: 'GATE_BLOCKED' },
+        { status: 403 },
+      )
+    }
   }
 
   // ── 5. Submit via engine ───────────────────────────────────────────────────

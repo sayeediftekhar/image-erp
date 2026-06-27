@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { DayViewModel, DayState } from '@/lib/revenue/classify'
 import {
@@ -12,6 +12,13 @@ import {
   todayMonth,
   type CalendarDay,
 } from '@/lib/revenue/calendar-grid'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface GateInfo {
+  priorMonth:  string   // YYYY-MM — the month that must be resolved first
+  missingCount: number
+}
 
 // ── Tile colours ──────────────────────────────────────────────────────────────
 
@@ -29,17 +36,21 @@ interface DayTileProps {
   day:     CalendarDay
   isToday: boolean
   onTap?:  () => void
-  locked?: boolean   // T3f-B hook — accepted here, not yet active
+  locked?: boolean  // T3f-B: true → greyed lock treatment; tapping fires onTap (nudge)
 }
 
-function DayTile({ day, isToday, onTap }: DayTileProps) {
+function DayTile({ day, isToday, onTap, locked = false }: DayTileProps) {
   if (!day) return <div aria-hidden />
 
-  const dayNum   = parseInt(day.date.slice(8), 10)
-  const isFuture = day.state === 'FUTURE'
-  const colour   = TILE_COLOUR[day.state]
+  const dayNum    = parseInt(day.date.slice(8), 10)
+  const isFuture  = day.state === 'FUTURE'
   const todayRing = isToday ? 'ring-2 ring-indigo-900 ring-offset-1' : ''
-  const base = `w-full aspect-square flex items-center justify-center rounded-lg text-sm font-semibold ${colour} ${todayRing}`
+
+  const colour = locked
+    ? 'bg-gray-100 text-gray-400 border border-gray-200'
+    : TILE_COLOUR[day.state]
+
+  const base = `w-full aspect-square flex flex-col items-center justify-center rounded-lg text-sm font-semibold ${colour} ${todayRing}`
 
   if (isFuture || !onTap) {
     return (
@@ -54,9 +65,10 @@ function DayTile({ day, isToday, onTap }: DayTileProps) {
       type="button"
       onClick={onTap}
       className={`${base} active:opacity-75`}
-      aria-label={`${day.date} ${day.state.toLowerCase()}`}
+      aria-label={`${day.date} ${locked ? 'locked' : day.state.toLowerCase()}`}
     >
-      {dayNum}
+      <span>{dayNum}</span>
+      {locked && <span className="text-[9px] leading-none mt-0.5">🔒</span>}
     </button>
   )
 }
@@ -65,13 +77,15 @@ function DayTile({ day, isToday, onTap }: DayTileProps) {
 
 interface Props {
   days:       DayViewModel[]
-  todayDhaka: string   // YYYY-MM-DD, server-resolved (Asia/Dhaka)
-  month:      string   // YYYY-MM
+  todayDhaka: string       // YYYY-MM-DD, server-resolved (Asia/Dhaka)
+  month:      string       // YYYY-MM
   entityId:   string
+  gateInfo?:  GateInfo | null  // non-null = this month is gated
 }
 
-export default function RevenueManagementClient({ days, todayDhaka, month }: Props) {
+export default function RevenueManagementClient({ days, todayDhaka, month, gateInfo }: Props) {
   const router = useRouter()
+  const [showNudge, setShowNudge] = useState(false)
 
   const navigate = useCallback((m: string) => {
     router.push(`/revenue?month=${m}`)
@@ -163,18 +177,41 @@ export default function RevenueManagementClient({ days, todayDhaka, month }: Pro
             ))}
           </div>
 
+          {/* Gate banner — visible when this month is blocked */}
+          {gateInfo && (
+            <div className="mb-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+              <p className="text-red-800 text-sm font-semibold">
+                {monthLabel(gateInfo.priorMonth)} is incomplete
+              </p>
+              <p className="text-red-700 text-xs mt-0.5">
+                {gateInfo.missingCount} unresolved day{gateInfo.missingCount !== 1 ? 's' : ''} — resolve them to enter this month
+              </p>
+              <button
+                onClick={() => navigate(gateInfo.priorMonth)}
+                className="mt-2 text-xs text-red-700 font-semibold underline"
+              >
+                Go to {monthLabel(gateInfo.priorMonth)} →
+              </button>
+            </div>
+          )}
+
           {/* Day tiles */}
           <div className="grid grid-cols-7 gap-1">
             {weeks.flatMap((week, wi) =>
               week.map((day, di) => {
-                const route = tapRoute(day)
+                const isEnterable = day?.state === 'MISSING' || day?.state === 'DRAFT'
+                const isLocked    = !!gateInfo && isEnterable
+                const route       = tapRoute(day)
+                const onTap       = isLocked
+                  ? () => setShowNudge(true)
+                  : (route !== null ? () => router.push(route) : undefined)
                 return (
                   <DayTile
                     key={day ? day.date : `pad-${wi}-${di}`}
                     day={day}
                     isToday={day?.date === todayDhaka}
-                    onTap={route !== null ? () => router.push(route) : undefined}
-                    locked={false}
+                    onTap={onTap}
+                    locked={isLocked}
                   />
                 )
               })
@@ -188,6 +225,40 @@ export default function RevenueManagementClient({ days, todayDhaka, month }: Pro
           )}
         </div>
       </div>
+      {/* ── Nudge modal (shown when a locked tile is tapped) ─────────────────── */}
+      {gateInfo && showNudge && (
+        <dialog
+          open
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 border-none w-full h-full"
+          onClick={e => { if (e.target === e.currentTarget) setShowNudge(false) }}
+        >
+          <div className="w-full max-w-sm mx-auto bg-white rounded-t-2xl shadow-2xl p-6 pb-8">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">
+              Finish {monthLabel(gateInfo.priorMonth)} first
+            </h2>
+            <p className="text-sm text-gray-600 mb-5">
+              {monthLabel(gateInfo.priorMonth)} has{' '}
+              <strong>{gateInfo.missingCount} unresolved day{gateInfo.missingCount !== 1 ? 's' : ''}</strong>.
+              Submit them or mark them closed, then come back to enter this month.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { setShowNudge(false); navigate(gateInfo.priorMonth) }}
+                className="w-full min-h-[44px] text-white rounded-xl font-semibold text-sm"
+                style={{ background: '#0F0A52' }}
+              >
+                Go to {monthLabel(gateInfo.priorMonth)} →
+              </button>
+              <button
+                onClick={() => setShowNudge(false)}
+                className="w-full min-h-[44px] border border-gray-300 text-gray-700 rounded-xl font-semibold text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
     </div>
   )
 }
