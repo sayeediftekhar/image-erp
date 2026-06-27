@@ -6,6 +6,9 @@ import {
   deriveTransferCashAccount,
   getSourceOptions,
   lineFund,
+  deriveFundLabel,
+  deriveCategoryLabel,
+  formatExpenseTaka,
 } from './routing'
 import { parseMoneyField } from '../revenue/money-input'
 
@@ -291,6 +294,97 @@ describe('comma regression — reusing parseMoneyField (money-input)', () => {
     const result = parseMoneyField('')
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value).toBe(0)
+  })
+})
+
+// ── deriveFundLabel (account → fund, list display) ────────────────────────────
+
+describe('deriveFundLabel', () => {
+  test('5050 (Travel) → PI', () => {
+    expect(deriveFundLabel('5050', '1015')).toBe('PI')
+  })
+
+  test('5010 (Salary) → PI', () => {
+    expect(deriveFundLabel('5010', '1015')).toBe('PI')
+  })
+
+  test('1210 (Medicine stock) → RDF', () => {
+    expect(deriveFundLabel('1210', '1120')).toBe('RDF')
+  })
+
+  test('1220 (Lab stock) → RDF', () => {
+    expect(deriveFundLabel('1220', '1015')).toBe('RDF')
+  })
+
+  test('1410 (debit) → Transfer (SEND direction)', () => {
+    expect(deriveFundLabel('1410', '1010')).toBe('Transfer')
+  })
+
+  test('1010 debit + 2210 credit → Transfer (RECEIVE direction)', () => {
+    expect(deriveFundLabel('1010', '2210')).toBe('Transfer')
+  })
+
+  test('1110 debit + 2210 credit → Transfer (RECEIVE via bank)', () => {
+    expect(deriveFundLabel('1110', '2210')).toBe('Transfer')
+  })
+})
+
+// ── deriveCategoryLabel (account → label, list display) ───────────────────────
+
+describe('deriveCategoryLabel', () => {
+  test('5050 → "Travel"', () => {
+    expect(deriveCategoryLabel('5050', '1015')).toBe('Travel')
+  })
+
+  test('5010 → "Salary & Wages"', () => {
+    expect(deriveCategoryLabel('5010', '1015')).toBe('Salary & Wages')
+  })
+
+  test('5030 → "Fees, Honorarium & Allowances"', () => {
+    expect(deriveCategoryLabel('5030', '1015')).toBe('Fees, Honorarium & Allowances')
+  })
+
+  test('1210 → "Medicine"', () => {
+    expect(deriveCategoryLabel('1210', '1120')).toBe('Medicine')
+  })
+
+  test('1230 → "Logistic"', () => {
+    expect(deriveCategoryLabel('1230', '1015')).toBe('Logistic')
+  })
+
+  test('1410 → "Send to HQ/clinic"', () => {
+    expect(deriveCategoryLabel('1410', '1010')).toBe('Send to HQ/clinic')
+  })
+
+  test('1010 + credit 2210 → "Receive from HQ/clinic"', () => {
+    expect(deriveCategoryLabel('1010', '2210')).toBe('Receive from HQ/clinic')
+  })
+})
+
+// ── formatExpenseTaka (Taka display — NUMERIC(15,2) already in Taka, no ÷100) ─
+
+describe('formatExpenseTaka', () => {
+  test('5000 → "Tk 5,000"', () => {
+    expect(formatExpenseTaka(5000)).toBe('Tk 5,000')
+  })
+
+  test('15000 → "Tk 15,000"', () => {
+    expect(formatExpenseTaka(15000)).toBe('Tk 15,000')
+  })
+
+  test('500 → "Tk 500"', () => {
+    expect(formatExpenseTaka(500)).toBe('Tk 500')
+  })
+
+  test('458900 → "Tk 4,58,900" (lakh-style en-IN grouping)', () => {
+    expect(formatExpenseTaka(458900)).toBe('Tk 4,58,900')
+  })
+
+  test('anti-regression: 5000 is NOT "Tk 50" (÷100 bug) and NOT "Tk 5,00,000" (×100 bug)', () => {
+    const result = formatExpenseTaka(5000)
+    expect(result).not.toBe('Tk 50')
+    expect(result).not.toBe('Tk 5,00,000')
+    expect(result).toBe('Tk 5,000')
   })
 })
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   type ExpenseFund,
   type ExpenseSource,
@@ -16,9 +17,10 @@ import { sanitizeMoney, parseMoneyField } from '@/lib/revenue/money-input'
 type PaymentMethod = 'PETTY_CASH' | 'CHEQUE' | 'BANK_TRANSFER' | 'CASH'
 
 interface Props {
-  entityId:   string
-  entityName: string
-  userId:     string
+  entityId:    string
+  entityName:  string
+  userId:      string
+  redirectTo?: string
 }
 
 interface FieldErrors {
@@ -36,7 +38,8 @@ interface PostResult {
   status:  'POSTED' | 'PENDING_APPROVAL'
 }
 
-export default function ExpenseForm({ entityName }: Props) {
+export default function ExpenseForm({ entityName, redirectTo }: Props) {
+  const router = useRouter()
   // ── Fund-first state ───────────────────────────────────────────────────────
   const [fund, setFund] = useState<ExpenseFund>('PI')
   // Reset all fund-dependent selections when fund changes
@@ -155,7 +158,11 @@ export default function ExpenseForm({ entityName }: Props) {
       const data = await res.json().catch(() => ({})) as { entryId?: string; status?: string; error?: string }
 
       if (res.ok && data.entryId) {
-        setResult({ entryId: data.entryId, status: data.status as PostResult['status'] })
+        if (redirectTo) {
+          router.push(redirectTo)
+        } else {
+          setResult({ entryId: data.entryId, status: data.status as PostResult['status'] })
+        }
       } else {
         setSubmitError(data.error ?? 'Failed to post expense — please try again')
       }
@@ -188,7 +195,7 @@ export default function ExpenseForm({ entityName }: Props) {
   // ── Success screen ─────────────────────────────────────────────────────────
   if (result) {
     return (
-      <div className="flex-1 bg-gray-50 rounded-t-3xl -mt-3 px-4 py-8 flex flex-col items-center gap-6">
+      <div className="px-4 py-12 flex flex-col items-center gap-6">
         <div
           className="w-14 h-14 rounded-full flex items-center justify-center"
           style={{ background: '#13007D' }}
@@ -226,8 +233,8 @@ export default function ExpenseForm({ entityName }: Props) {
 
   // ── Main form ──────────────────────────────────────────────────────────────
   return (
-    <div className="flex-1 bg-gray-50 rounded-t-3xl -mt-3 overflow-y-auto">
-      <div className="px-4 py-5 space-y-4 pb-8">
+    <div>
+      <div className="px-4 py-5 space-y-4 pb-4">
 
         {/* Clinic context */}
         <p className="text-xs text-gray-400 font-medium">{entityName}</p>

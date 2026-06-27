@@ -131,3 +131,37 @@ export function getSourceOptions(
 export function lineFund(fund: ExpenseFund): 'PI' | 'RDF' {
   return fund === 'RDF' ? 'RDF' : 'PI'
 }
+
+// ── List-display helpers (account → label, reverse of the form's forward direction) ──
+
+// Derives the fund label for a journal_entry row from its debit + credit account codes.
+// Transfer RECEIVE is detected via creditAccount='2210' (debit side is cash/bank).
+// Falls back to the raw debit account code — visible in the UI rather than silently blank.
+export function deriveFundLabel(debitAccount: string, creditAccount: string): string {
+  if (debitAccount.startsWith('5')) return 'PI'
+  if (debitAccount.startsWith('12')) return 'RDF'
+  if (debitAccount === '1410') return 'Transfer'
+  if (creditAccount === '2210') return 'Transfer'
+  return debitAccount
+}
+
+// Derives the category/stream/direction label from debit + credit account codes.
+// Uses PI_CATEGORIES and RDF_STREAMS in reverse — no description-string parsing.
+export function deriveCategoryLabel(debitAccount: string, creditAccount: string): string {
+  const piMatch = PI_CATEGORIES.find((c) => c.accountCode === debitAccount)
+  if (piMatch) return piMatch.label
+
+  const rdfMatch = RDF_STREAMS.find((s) => s.accountCode === debitAccount)
+  if (rdfMatch) return rdfMatch.label
+
+  if (debitAccount === '1410') return 'Send to HQ/clinic'
+  if (creditAccount === '2210') return 'Receive from HQ/clinic'
+  return '—'
+}
+
+// Formats a Taka amount from journal_lines.debit (NUMERIC(15,2), already in Taka).
+// DO NOT divide by 100 — the stored value is Taka-decimal, not integer paisa.
+// 5000 → 'Tk 5,000'; 458900 → 'Tk 4,58,900' (en-IN lakh grouping).
+export function formatExpenseTaka(taka: number): string {
+  return 'Tk ' + Math.round(taka).toLocaleString('en-IN')
+}
